@@ -1,6 +1,8 @@
-# Building Production-grade Agents - Continuous Evaluation with Amazon Bedrock AgentCore and Langfuse 
+# Building Production-grade Agents - Continuous Evaluation with Amazon Bedrock AgentCore and Langfuse
 
 This project implements a **continuous flywheel for AgentOps** that integrates Amazon Bedrock AgentCore with Langfuse for comprehensive agent development, evaluation, and deployment. The system provides a complete lifecycle management approach for AI agents, from experimentation to production operations.
+
+We first presented this project in Oct 2025 ([pdf slides](https://static.langfuse.com/events/2025_10_continuous_agent_evaluation_with_amazon_bedrock_agentcore_and_langfuse.pdf)).
 
 ## What We Want to Achieve
 

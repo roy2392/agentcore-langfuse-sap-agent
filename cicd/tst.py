@@ -1,4 +1,5 @@
 import langfuse
+from langfuse.experiment import Evaluation
 import sys
 import os
 import json
@@ -173,7 +174,8 @@ Rate the response on a scale of 0-1 where:
 
 Respond with ONLY a number between 0 and 1."""
 
-        # Call Bedrock Claude (use messages API with correct format for Sonnet)
+        # Call Bedrock Claude (use messages API)
+        # Note: Bedrock Messages API doesn't use anthropic_version - that's for Converse API
         request_body = {
             "max_tokens": 100,
             "messages": [
@@ -184,26 +186,12 @@ Respond with ONLY a number between 0 and 1."""
             ]
         }
 
-        # For newer Claude models on Bedrock, include anthropic_version
-        # Try with version first, fall back to without if it fails
-        try:
-            response = bedrock_client.invoke_model(
-                modelId=EVALUATION_MODEL,
-                contentType="application/json",
-                accept="application/json",
-                body=json.dumps({**request_body, "anthropic_version": "bedrock-2023-06-01"})
-            )
-        except Exception as version_error:
-            if "anthropic_version" in str(version_error):
-                # Retry without version
-                response = bedrock_client.invoke_model(
-                    modelId=EVALUATION_MODEL,
-                    contentType="application/json",
-                    accept="application/json",
-                    body=json.dumps(request_body)
-                )
-            else:
-                raise
+        response = bedrock_client.invoke_model(
+            modelId=EVALUATION_MODEL,
+            contentType="application/json",
+            accept="application/json",
+            body=json.dumps(request_body)
+        )
 
         # Parse the response
         response_body = json.loads(response['body'].read())
@@ -261,20 +249,22 @@ def bedrock_quality_evaluator(*, input, output, expected_output, **kwargs):
 
         print(f"[EVALUATOR] Score: {score}")
 
-        # Return as a dictionary - this is the correct format for Langfuse evaluators
-        return {
-            "name": "bedrock_quality",
-            "value": score,
-            "comment": f"Quality score from Claude evaluation: {score:.2f}"
-        }
+        # Return as a Langfuse Evaluation object
+        evaluation = Evaluation(
+            name="bedrock_quality",
+            value=score,
+            comment=f"Quality score from Claude evaluation: {score:.2f}"
+        )
+        print(f"[EVALUATOR] Returning Evaluation: {evaluation}")
+        return evaluation
     except Exception as e:
         print(f"[EVALUATOR] Error: {str(e)}")
         # Return a default score on error rather than failing
-        return {
-            "name": "bedrock_quality",
-            "value": 0.5,
-            "comment": f"Error during evaluation: {str(e)}"
-        }
+        return Evaluation(
+            name="bedrock_quality",
+            value=0.5,
+            comment=f"Error during evaluation: {str(e)}"
+        )
 
 # Run experiment with Bedrock evaluator
 print(f"\n{'='*80}")
@@ -291,7 +281,10 @@ result = langfuse.run_experiment(
     evaluators=[bedrock_quality_evaluator]
 )
 
-print(result.format(include_item_results=True))
+# Print experiment summary
+print(f"\nExperiment completed: {result.run_name}")
+if hasattr(result, 'dataset_run_url'):
+    print(f"Dataset run URL: {result.dataset_run_url}")
 
 # Extract quality scores and save to file
 quality_scores = []

@@ -1,4 +1,4 @@
-default_agent: strands_sonnet3_hebinv_PRD
+default_agent: strands_s3_hebinv_PRD
 agents:
   strands_c37_hebinv_DEV:
     name: strands_c37_hebinv_DEV
@@ -282,6 +282,48 @@ agents:
     codebuild:
       project_name: bedrock-agentcore-strands_sonnet3_hebinv_prd-builder
       execution_role: arn:aws:iam::133067889278:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-cfeae359aa
+      source_bucket: bedrock-agentcore-codebuild-sources-133067889278-us-east-1
+    memory:
+      mode: NO_MEMORY
+      memory_id: null
+      memory_arn: null
+      memory_name: null
+      event_expiry_days: 30
+      first_invoke_memory_check_done: false
+      was_created_by_toolkit: false
+    authorizer_configuration: null
+    request_header_configuration: null
+    oauth_configuration: null
+  strands_s3_hebinv_PRD:
+    name: strands_s3_hebinv_PRD
+    entrypoint: /Users/royzalta/Documents/GitHub/agentcore-langfuse-sap-agent/agents/strands_claude.py
+    platform: linux/arm64
+    container_runtime: docker
+    source_path: null
+    aws:
+      execution_role: arn:aws:iam::133067889278:role/AmazonBedrockAgentCoreSDKRuntime-us-east-1-75d6d3054c
+      execution_role_auto_create: false
+      account: '133067889278'
+      region: us-east-1
+      ecr_repository: 133067889278.dkr.ecr.us-east-1.amazonaws.com/bedrock-agentcore-strands_s3_hebinv_prd
+      ecr_auto_create: false
+      network_configuration:
+        network_mode: PUBLIC
+        network_mode_config: null
+      protocol_configuration:
+        server_protocol: HTTP
+      observability:
+        enabled: false
+      lifecycle_configuration:
+        idle_runtime_session_timeout: null
+        max_lifetime: null
+    bedrock_agentcore:
+      agent_id: strands_s3_hebinv_PRD-hasYuv5cUj
+      agent_arn: arn:aws:bedrock-agentcore:us-east-1:133067889278:runtime/strands_s3_hebinv_PRD-hasYuv5cUj
+      agent_session_id: null
+    codebuild:
+      project_name: bedrock-agentcore-strands_s3_hebinv_prd-builder
+      execution_role: arn:aws:iam::133067889278:role/AmazonBedrockAgentCoreSDKCodeBuild-us-east-1-75d6d3054c
       source_bucket: bedrock-agentcore-codebuild-sources-133067889278-us-east-1
     memory:
       mode: NO_MEMORY

@@ -149,6 +149,7 @@ Respond with ONLY a number between 0 and 1."""
             contentType="application/json",
             accept="application/json",
             body=json.dumps({
+                "anthropic_version": "bedrock-2024-06-04",
                 "max_tokens": 100,
                 "messages": [
                     {

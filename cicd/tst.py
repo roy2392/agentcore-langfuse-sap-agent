@@ -197,8 +197,12 @@ print(f"\n{'='*80}")
 print("Running experiment with Bedrock Claude evaluator...")
 print(f"{'='*80}\n")
 
+# Convert dataset items to list for experiment
+data = list(items_list)
+
 result = langfuse.run_experiment(
     name="Hebrew Inventory Agent - Bedrock Evaluation",
+    data=data,
     task=agent_task,
     evaluators=[bedrock_quality_evaluator]
 )

@@ -173,21 +173,37 @@ Rate the response on a scale of 0-1 where:
 
 Respond with ONLY a number between 0 and 1."""
 
-        # Call Bedrock Claude (use messages API)
-        response = bedrock_client.invoke_model(
-            modelId=EVALUATION_MODEL,
-            contentType="application/json",
-            accept="application/json",
-            body=json.dumps({
-                "max_tokens": 100,
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": evaluation_prompt
-                    }
-                ]
-            })
-        )
+        # Call Bedrock Claude (use messages API with correct format for Sonnet)
+        request_body = {
+            "max_tokens": 100,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": evaluation_prompt
+                }
+            ]
+        }
+
+        # For newer Claude models on Bedrock, include anthropic_version
+        # Try with version first, fall back to without if it fails
+        try:
+            response = bedrock_client.invoke_model(
+                modelId=EVALUATION_MODEL,
+                contentType="application/json",
+                accept="application/json",
+                body=json.dumps({**request_body, "anthropic_version": "bedrock-2023-06-01"})
+            )
+        except Exception as version_error:
+            if "anthropic_version" in str(version_error):
+                # Retry without version
+                response = bedrock_client.invoke_model(
+                    modelId=EVALUATION_MODEL,
+                    contentType="application/json",
+                    accept="application/json",
+                    body=json.dumps(request_body)
+                )
+            else:
+                raise
 
         # Parse the response
         response_body = json.loads(response['body'].read())

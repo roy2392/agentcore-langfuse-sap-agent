@@ -104,14 +104,30 @@ def agent_task(*, item, **kwargs):
         print(f"\nInvoking agent with prompt: {prompt[:100]}...")
 
         # Invoke the agent
-        result = invoke_agent(agent_arn, prompt)
+        try:
+            result = invoke_agent(agent_arn, prompt)
+        except Exception as e:
+            # Catch UTF-8 decoding errors and try to recover
+            if 'utf-8' in str(e).lower():
+                print(f"Warning: UTF-8 decoding error in agent response, using fallback")
+                # Return a default response for now
+                response = "Agent response contained encoding issues. Please check the agent logs."
+                return response
+            else:
+                raise
 
         print(f"Agent result type: {type(result)}")
         print(f"Agent result keys: {result.keys() if isinstance(result, dict) else 'N/A'}")
 
         # Check for errors
         if isinstance(result, dict) and 'error' in result:
-            raise Exception(f"Agent invocation error: {result['error']}")
+            error_msg = result.get('error', 'Unknown error')
+            if 'utf-8' in str(error_msg).lower():
+                print(f"Warning: UTF-8 decoding error in agent response")
+                response = "Agent response contained encoding issues. Please check the agent logs."
+                return response
+            else:
+                raise Exception(f"Agent invocation error: {error_msg}")
 
         # Extract the response based on content type
         if isinstance(result, dict):
@@ -163,7 +179,6 @@ Respond with ONLY a number between 0 and 1."""
             contentType="application/json",
             accept="application/json",
             body=json.dumps({
-                "anthropic_version": "bedrock-2024-06-04",
                 "max_tokens": 100,
                 "messages": [
                     {

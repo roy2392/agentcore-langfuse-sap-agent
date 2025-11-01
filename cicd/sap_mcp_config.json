@@ -4,7 +4,7 @@
   "region": "us-east-1",
   "sap_host": "aws-saptfc-demosystems-sapsbx.awsforsap.sap.aws.dev",
   "sap_user": "AWSDEMO",
-  "timestamp": "2025-11-01T10:17:35.538057",
+  "timestamp": "2025-11-01T10:40:33.002248",
   "ecs_task_family": "sap-mcp-server",
-  "ecs_task_arn": "arn:aws:ecs:us-east-1:133067889278:task-definition/sap-mcp-server:2"
+  "ecs_task_arn": "arn:aws:ecs:us-east-1:133067889278:task-definition/sap-mcp-server:4"
 }

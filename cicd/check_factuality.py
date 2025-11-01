@@ -12,16 +12,16 @@ import os
 from typing import Dict, Any, Optional
 
 
-def load_factuality_results(results_file: str = 'factuality_results.json') -> Dict[str, Any]:
+def load_factuality_results(results_file: str = 'evaluation_results.json') -> Dict[str, Any]:
     """
-    Load factuality results from JSON file.
-    
+    Load evaluation results from JSON file.
+
     Args:
-        results_file: Path to the factuality results JSON file
-        
+        results_file: Path to the evaluation results JSON file
+
     Returns:
-        Dictionary containing the factuality results
-        
+        Dictionary containing the evaluation results
+
     Raises:
         FileNotFoundError: If the results file doesn't exist
         json.JSONDecodeError: If the file contains invalid JSON
@@ -40,20 +40,20 @@ def load_factuality_results(results_file: str = 'factuality_results.json') -> Di
 
 def print_factuality_summary(results: Dict[str, Any]) -> None:
     """
-    Print a formatted summary of factuality results.
-    
+    Print a formatted summary of evaluation results.
+
     Args:
-        results: Dictionary containing factuality results
+        results: Dictionary containing evaluation results
     """
-    # Extract metrics
-    avg_factuality = results['average_factuality_score']
+    # Extract metrics - support both old and new key names
+    avg_score = results.get('average_quality_score') or results.get('average_factuality_score', 0)
     total_items = results['total_items']
     experiment_name = results['experiment_name']
-    
+
     print(f'Experiment: {experiment_name}')
     print(f'Total items evaluated: {total_items}')
-    print(f'Average Factuality Score: {avg_factuality:.3f} ({avg_factuality*100:.1f}%)')
-    
+    print(f'Average Quality Score (Bedrock Claude): {avg_score:.3f} ({avg_score*100:.1f}%)')
+
     # Print individual scores
     print('\nIndividual scores:')
     for i, score_data in enumerate(results['scores']):
@@ -64,35 +64,35 @@ def print_factuality_summary(results: Dict[str, Any]) -> None:
 
 def check_factuality_threshold(results: Dict[str, Any], threshold: float = 0.5) -> bool:
     """
-    Check if the average factuality score meets the threshold requirement.
-    
+    Check if the average quality score meets the threshold requirement.
+
     Args:
-        results: Dictionary containing factuality results
-        threshold: Minimum acceptable factuality score (default: 0.5)
-        
+        results: Dictionary containing evaluation results
+        threshold: Minimum acceptable quality score (default: 0.5)
+
     Returns:
         True if the score meets the threshold, False otherwise
     """
-    avg_factuality = results['average_factuality_score']
-    
+    avg_score = results.get('average_quality_score') or results.get('average_factuality_score', 0)
+
     print(f'\nThreshold: {threshold*100:.0f}%')
-    
-    if avg_factuality >= threshold:
-        print(f'✓ PASSED: Factuality score {avg_factuality*100:.1f}% is above {threshold*100:.0f}%')
+
+    if avg_score >= threshold:
+        print(f'✓ PASSED: Quality score {avg_score*100:.1f}% is above {threshold*100:.0f}%')
         return True
     else:
-        print(f'✗ FAILED: Factuality score {avg_factuality*100:.1f}% is below {threshold*100:.0f}%')
+        print(f'✗ FAILED: Quality score {avg_score*100:.1f}% is below {threshold*100:.0f}%')
         return False
 
 
-def main(results_file: str = 'factuality_results.json', threshold: float = 0.5) -> int:
+def main(results_file: str = 'evaluation_results.json', threshold: float = 0.5) -> int:
     """
-    Main function to check factuality results.
-    
+    Main function to check evaluation results.
+
     Args:
-        results_file: Path to the factuality results JSON file
-        threshold: Minimum acceptable factuality score
-        
+        results_file: Path to the evaluation results JSON file
+        threshold: Minimum acceptable quality score
+
     Returns:
         Exit code: 0 for success, 1 for failure
     """
@@ -111,15 +111,15 @@ def main(results_file: str = 'factuality_results.json', threshold: float = 0.5) 
 if __name__ == '__main__':
     # Parse command line arguments
     import argparse
-    
-    parser = argparse.ArgumentParser(description='Check factuality results from evaluation')
-    parser.add_argument('--results-file', '-f', 
-                       default='factuality_results.json',
-                       help='Path to factuality results JSON file (default: factuality_results.json)')
-    parser.add_argument('--threshold', '-t', 
-                       type=float, 
+
+    parser = argparse.ArgumentParser(description='Check evaluation results from Bedrock Claude')
+    parser.add_argument('--results-file', '-f',
+                       default='evaluation_results.json',
+                       help='Path to evaluation results JSON file (default: evaluation_results.json)')
+    parser.add_argument('--threshold', '-t',
+                       type=float,
                        default=0.5,
-                       help='Minimum acceptable factuality score (default: 0.5)')
+                       help='Minimum acceptable quality score (default: 0.5)')
     
     args = parser.parse_args()
     

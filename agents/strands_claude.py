@@ -70,3 +70,6 @@ def strands_agent_bedrock(payload):
 
 if __name__ == "__main__":
     app.run()
+# Updated for production deployment with Hebrew inventory management
+# Agent runs on Claude 3 Sonnet with Bedrock AgentCore  
+# Region: us-east-1

@@ -13,17 +13,32 @@ import sys
 import os
 import logging
 from typing import Any, Dict, List
-from test_sap_api import (
-    get_stock_levels,
-    get_low_stock_materials,
-    get_material_info,
-    get_warehouse_stock,
-    get_purchase_orders_for_material,
-    get_goods_receipt,
-    forecast_material_demand,
-    get_complete_po_data,
-    _missing_env
-)
+
+# Fix import path - handle both module and direct execution
+if __name__ != '__main__':
+    from .test_sap_api import (
+        get_stock_levels,
+        get_low_stock_materials,
+        get_material_info,
+        get_warehouse_stock,
+        get_purchase_orders_for_material,
+        get_goods_receipt,
+        forecast_material_demand,
+        get_complete_po_data,
+        _missing_env
+    )
+else:
+    from test_sap_api import (
+        get_stock_levels,
+        get_low_stock_materials,
+        get_material_info,
+        get_warehouse_stock,
+        get_purchase_orders_for_material,
+        get_goods_receipt,
+        forecast_material_demand,
+        get_complete_po_data,
+        _missing_env
+    )
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

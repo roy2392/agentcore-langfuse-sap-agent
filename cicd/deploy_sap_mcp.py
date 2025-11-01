@@ -199,9 +199,17 @@ def main():
     print(f"{'='*80}\n")
 
     # Get SAP credentials
-    sap_host = args.sap_host or get_ssm_parameter('/sap/SAP_HOST', region=args.region)
-    sap_user = args.sap_user or get_ssm_parameter('/sap/SAP_USER', region=args.region)
-    sap_password = args.sap_password or get_ssm_parameter('/sap/SAP_PASSWORD', region=args.region)
+    sap_host = args.sap_host
+    sap_user = args.sap_user
+    sap_password = args.sap_password
+
+    # Try SSM if not provided via CLI
+    if not sap_host:
+        sap_host = get_ssm_parameter('/sap/SAP_HOST', region_name=args.region)
+    if not sap_user:
+        sap_user = get_ssm_parameter('/sap/SAP_USER', region_name=args.region)
+    if not sap_password:
+        sap_password = get_ssm_parameter('/sap/SAP_PASSWORD', region_name=args.region)
 
     if not all([sap_host, sap_user, sap_password]):
         print("Error: Missing SAP credentials")

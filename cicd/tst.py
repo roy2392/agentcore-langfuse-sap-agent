@@ -143,13 +143,12 @@ Rate the response on a scale of 0-1 where:
 
 Respond with ONLY a number between 0 and 1."""
 
-        # Call Bedrock Claude
+        # Call Bedrock Claude (use messages API)
         response = bedrock_client.invoke_model(
             modelId=EVALUATION_MODEL,
             contentType="application/json",
             accept="application/json",
             body=json.dumps({
-                "anthropic_version": "bedrock-2023-06-01",
                 "max_tokens": 100,
                 "messages": [
                     {

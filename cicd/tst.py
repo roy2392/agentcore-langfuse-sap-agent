@@ -229,27 +229,45 @@ Respond with ONLY a number between 0 and 1."""
 
 # Define Bedrock evaluator function
 def bedrock_quality_evaluator(*, input, output, expected_output, **kwargs):
-    """Custom evaluator using Bedrock Claude."""
+    """Custom evaluator using Bedrock Claude.
+
+    Note: Langfuse evaluators should return a dict or EvaluationResult.
+    We use EvaluationResult from the dataclass defined at the top.
+    """
     try:
         print(f"\n[EVALUATOR] Starting evaluation...")
-        print(f"[EVALUATOR] Input: {str(input)[:100]}...")
-        print(f"[EVALUATOR] Output: {str(output)[:100]}...")
-        print(f"[EVALUATOR] Expected: {str(expected_output)[:100]}...")
+        print(f"[EVALUATOR] Input type: {type(input)}, value: {str(input)[:100]}...")
+        print(f"[EVALUATOR] Output type: {type(output)}, value: {str(output)[:100]}...")
+        print(f"[EVALUATOR] Expected type: {type(expected_output)}, value: {str(expected_output)[:100]}...")
+        print(f"[EVALUATOR] kwargs: {kwargs}")
 
         score = evaluate_response_with_bedrock(str(input), str(output), str(expected_output))
 
-        print(f"[EVALUATOR] Score calculated: {score}")
+        print(f"[EVALUATOR] Score calculated: {score}, type: {type(score)}")
 
+        # Create EvaluationResult using dataclass
         result = EvaluationResult(
             name="bedrock_quality",
             value=score,
             comment=f"Quality score from Claude evaluation: {score:.2f}"
         )
 
-        print(f"[EVALUATOR] Returning result: {result}")
-        return result
+        print(f"[EVALUATOR] Returning result type: {type(result)}")
+        print(f"[EVALUATOR] Result: {result}")
+        print(f"[EVALUATOR] Result.name: {result.name}, Result.value: {result.value}")
+
+        # Also try returning as dict for Langfuse compatibility
+        result_dict = {
+            "name": result.name,
+            "value": result.value,
+            "comment": result.comment
+        }
+        print(f"[EVALUATOR] Also returning dict: {result_dict}")
+        return result_dict
     except Exception as e:
         print(f"[EVALUATOR] Error in evaluation: {str(e)}")
+        import traceback
+        traceback.print_exc()
         raise
 
 # Run experiment with Bedrock evaluator

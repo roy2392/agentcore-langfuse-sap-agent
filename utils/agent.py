@@ -1,8 +1,22 @@
 import base64
 import boto3
+import sys
+import os
 from bedrock_agentcore_starter_toolkit import Runtime
 from boto3.session import Session
-from langfuse import get_client
+
+# Add parent directory to path for proper imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, parent_dir)
+
+try:
+    from langfuse import get_client as langfuse_get_client
+except ImportError:
+    # Fallback if direct import fails
+    import importlib
+    langfuse_module = importlib.import_module('langfuse')
+    langfuse_get_client = getattr(langfuse_module, 'get_client')
+
 from utils.aws import get_ssm_parameter
 
 boto_session = Session()
@@ -171,8 +185,16 @@ def invoke_agent(agent_arn, prompt, session_id=None):
         agent_core_client = boto3.client('bedrock-agentcore', region_name=region)
         
 
-        trace_id = get_client().get_current_trace_id()
-        obs_id = get_client().get_current_observation_id()
+        # Try to get Langfuse context, but don't fail if unavailable
+        trace_id = None
+        obs_id = None
+        try:
+            if langfuse_get_client:
+                client = langfuse_get_client()
+                trace_id = client.get_current_trace_id() if client else None
+                obs_id = client.get_current_observation_id() if client else None
+        except Exception as e:
+            print(f"Note: Langfuse context not available: {str(e)}")
 
         # Prepare the payload
         payload = json.dumps({"prompt": prompt, 
@@ -300,4 +322,37 @@ def delete_agent(agent_runtime_id, ecr_uri):
             'agent_runtime_id': agent_runtime_id,
             'error': str(e)
         }
+
+
+if __name__ == "__main__":
+    import argparse
+    import json
+
+    parser = argparse.ArgumentParser(description="Bedrock AgentCore agent utilities")
+    subparsers = parser.add_subparsers(dest='command', help='Command to execute')
+
+    # Invoke command
+    invoke_parser = subparsers.add_parser('invoke', help='Invoke an agent')
+    invoke_parser.add_argument('agent_arn', help='ARN of the agent to invoke')
+    invoke_parser.add_argument('prompt', help='Prompt to send to the agent')
+    invoke_parser.add_argument('--session-id', help='Session ID (optional)', default=None)
+
+    args = parser.parse_args()
+
+    if args.command == 'invoke':
+        print(f"\n{'='*80}")
+        print("INVOKING AGENT")
+        print(f"{'='*80}")
+        print(f"Agent ARN: {args.agent_arn}")
+        print(f"Prompt: {args.prompt}\n")
+
+        result = invoke_agent(args.agent_arn, args.prompt, args.session_id)
+
+        print(f"{'='*80}")
+        print("RESPONSE")
+        print(f"{'='*80}\n")
+        print(json.dumps(result, indent=2, default=str))
+        print(f"\n{'='*80}\n")
+    else:
+        parser.print_help()
 

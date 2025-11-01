@@ -30,8 +30,8 @@ def get_bedrock_model():
 # Initialize the Bedrock model
 bedrock_model = get_bedrock_model()
 
-# Define the agent's system prompt (exact from AWS sample)
-system_prompt = os.getenv("SYSTEM_PROMPT", "You are an experienced agent supporting developers.")
+# Define the agent's system prompt - Hebrew Inventory Management
+system_prompt = os.getenv("SYSTEM_PROMPT", "אתה סוכן מומחה בניהול מלאי. התשובות שלך צריכות להיות בעברית בלבד. השתמש ב-SAP OData API כדי לשלוף נתוני מלאי, מזמנות קנייה וכמויות של מוצרים. עבור כל שאלה על מלאי, ספק מידע מדויק וממוגן מה-SAP. ודא שהתשובה שלך כוללת: (1) פרטי מלאי נוכחי, (2) כמויות שהוזמנו, (3) תאריכים רלוונטיים, ו-(4) המלצות על סמך סטטוס המלאי.")
 
 app = BedrockAgentCoreApp()
 

@@ -1,8 +1,18 @@
 import base64
 import os
+import sys
+import importlib
 from datetime import datetime
-from langfuse import get_client
-from utils.agent import invoke_agent
+
+# Avoid circular import by importing langfuse differently
+try:
+    import langfuse as langfuse_pkg
+    get_client = langfuse_pkg.get_client
+except (ImportError, AttributeError):
+    # Fallback method
+    langfuse_pkg = importlib.import_module('langfuse')
+    get_client = getattr(langfuse_pkg, 'get_client', None)
+
 from utils.aws import get_ssm_parameter
 
 
@@ -64,17 +74,20 @@ def run_experiment(
     def agent_task(*, item, **kwargs):
         """
         Task function that invokes the agent with the dataset item input.
-        
+
         Parameters:
         - item: DatasetItemClient object containing input and optionally expected_output
-        
+
         Returns:
         - str: The agent's response
         """
+        # Import here to avoid circular imports
+        from utils.agent import invoke_agent
+
         # Extract the prompt from the dataset item
         # Use dot notation to access DatasetItemClient properties
         prompt = item.input['question']
-        
+
         # Invoke the agent
         result = invoke_agent(agent_arn, prompt)
         

@@ -360,8 +360,8 @@ agents:
         idle_runtime_session_timeout: null
         max_lifetime: null
     bedrock_agentcore:
-      agent_id: null
-      agent_arn: null
+      agent_id: strands_s3_hebinv_TST-5VQpqV9p8n
+      agent_arn: arn:aws:bedrock-agentcore:us-east-1:133067889278:runtime/strands_s3_hebinv_TST-5VQpqV9p8n
       agent_session_id: null
     codebuild:
       project_name: bedrock-agentcore-strands_s3_hebinv_tst-builder

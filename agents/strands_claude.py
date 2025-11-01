@@ -9,10 +9,21 @@ from strands.telemetry import StrandsTelemetry
 
 from mcp.client.streamable_http import streamablehttp_client
 from strands.tools.mcp.mcp_client import MCPClient
-from langfuse import get_client
 
+# Initialize SAP MCP client (connects to local SAP MCP server)
+sap_mcp_host = os.getenv("SAP_MCP_HOST", "localhost")
+sap_mcp_port = os.getenv("SAP_MCP_PORT", "8000")
+sap_mcp_url = f"http://{sap_mcp_host}:{sap_mcp_port}/mcp"
 
-streamable_http_mcp_client = MCPClient(lambda: streamablehttp_client("https://langfuse.com/api/mcp"))
+sap_mcp_client = MCPClient(lambda: streamablehttp_client(sap_mcp_url))
+
+# Optional: Initialize Langfuse telemetry if available (non-blocking)
+try:
+    from langfuse import get_client as get_langfuse_client
+    _langfuse_client = get_langfuse_client()
+except Exception as e:
+    print(f"Warning: Langfuse not available for telemetry: {e}")
+    _langfuse_client = None
 
 # Function to initialize Bedrock model
 def get_bedrock_model():
@@ -50,10 +61,10 @@ def strands_agent_bedrock(payload):
     strands_telemetry = StrandsTelemetry()
     strands_telemetry.setup_otlp_exporter()
 
-    # Create an agent with MCP tools
-    with streamable_http_mcp_client:
+    # Create an agent with SAP MCP tools
+    with sap_mcp_client:
 
-        mcp_tools = streamable_http_mcp_client.list_tools_sync()
+        mcp_tools = sap_mcp_client.list_tools_sync()
 
         # Create the agent
         agent = Agent(
@@ -62,8 +73,11 @@ def strands_agent_bedrock(payload):
             tools=mcp_tools
         )
 
-        with get_client().start_as_current_observation(name='strands-agent', trace_context={"trace_id": trace_id, "parent_observation_id": parent_obs_id}):
-
+        # Use Langfuse telemetry if available
+        if _langfuse_client:
+            with _langfuse_client.start_as_current_observation(name='strands-agent', trace_context={"trace_id": trace_id, "parent_observation_id": parent_obs_id}):
+                response = agent(user_input)
+        else:
             response = agent(user_input)
 
     return response.message['content'][0]['text']

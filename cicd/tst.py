@@ -174,28 +174,26 @@ Rate the response on a scale of 0-1 where:
 
 Respond with ONLY a number between 0 and 1."""
 
-        # Call Bedrock Claude (use messages API)
-        # Note: Bedrock Messages API doesn't use anthropic_version - that's for Converse API
-        request_body = {
-            "max_tokens": 100,
-            "messages": [
+        # Call Bedrock Claude using Converse API
+        response = bedrock_client.converse(
+            modelId=EVALUATION_MODEL,
+            messages=[
                 {
                     "role": "user",
-                    "content": evaluation_prompt
+                    "content": [
+                        {
+                            "text": evaluation_prompt
+                        }
+                    ]
                 }
-            ]
-        }
-
-        response = bedrock_client.invoke_model(
-            modelId=EVALUATION_MODEL,
-            contentType="application/json",
-            accept="application/json",
-            body=json.dumps(request_body)
+            ],
+            inferenceConfig={
+                "maxTokens": 100
+            }
         )
 
         # Parse the response
-        response_body = json.loads(response['body'].read())
-        score_text = response_body['content'][0]['text'].strip()
+        score_text = response['output']['message']['content'][0]['text'].strip()
 
         # Extract score (handle various formats)
         try:

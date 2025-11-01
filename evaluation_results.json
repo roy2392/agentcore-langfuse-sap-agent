@@ -1,6 +1,17 @@
 {
   "experiment_name": "Hebrew Inventory Agent - Bedrock Evaluation",
-  "total_items": 0,
-  "average_quality_score": 0,
-  "scores": []
+  "total_items": 2,
+  "average_quality_score": 0.775,
+  "scores": [
+    {
+      "name": "bedrock_quality",
+      "value": 0.75,
+      "comment": "Quality score from Claude evaluation: 0.75"
+    },
+    {
+      "name": "bedrock_quality",
+      "value": 0.8,
+      "comment": "Quality score from Claude evaluation: 0.80"
+    }
+  ]
 }

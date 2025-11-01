@@ -3,14 +3,20 @@ import sys
 import os
 import json
 import boto3
-
-from langfuse.evaluation import EvaluationResult
+from dataclasses import dataclass
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from utils.langfuse import get_langfuse_client
 from utils.agent import invoke_agent
 from utils.aws import get_ssm_parameter
 import logging
+
+# Simple EvaluationResult class
+@dataclass
+class EvaluationResult:
+    name: str
+    value: float
+    comment: str = ""
 
 # Add this at the top of your script
 #logging.basicConfig(level=logging.DEBUG)

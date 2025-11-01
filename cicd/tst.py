@@ -94,26 +94,40 @@ def agent_task(*, item, **kwargs):
     Returns:
     - str: The agent's response
     """
-    # Extract the prompt from the dataset item
-    if isinstance(item.input, dict) and 'question' in item.input:
-        prompt = item.input['question']
-    else:
-        prompt = str(item.input)
+    try:
+        # Extract the prompt from the dataset item
+        if isinstance(item.input, dict) and 'question' in item.input:
+            prompt = item.input['question']
+        else:
+            prompt = str(item.input)
 
-    # Invoke the agent
-    result = invoke_agent(agent_arn, prompt)
+        print(f"\nInvoking agent with prompt: {prompt[:100]}...")
 
-    # Check for errors
-    if 'error' in result:
-        raise Exception(f"Agent invocation error: {result['error']}")
+        # Invoke the agent
+        result = invoke_agent(agent_arn, prompt)
 
-    # Extract the response based on content type
-    if result.get('content_type') == 'application/json':
-        response = result['response']
-    else:
-        response = result.get('response', '')
+        print(f"Agent result type: {type(result)}")
+        print(f"Agent result keys: {result.keys() if isinstance(result, dict) else 'N/A'}")
 
-    return response
+        # Check for errors
+        if isinstance(result, dict) and 'error' in result:
+            raise Exception(f"Agent invocation error: {result['error']}")
+
+        # Extract the response based on content type
+        if isinstance(result, dict):
+            if result.get('content_type') == 'application/json':
+                response = result['response']
+            else:
+                response = result.get('response', '')
+        else:
+            # If result is already a string (plain response), use it directly
+            response = str(result)
+
+        print(f"Agent response: {str(response)[:100]}...")
+        return response
+    except Exception as e:
+        print(f"Error in agent_task: {str(e)}")
+        raise
 
 
 def evaluate_response_with_bedrock(input_text, output_text, expected_output):
@@ -185,12 +199,27 @@ Respond with ONLY a number between 0 and 1."""
 # Define Bedrock evaluator function
 def bedrock_quality_evaluator(*, input, output, expected_output, **kwargs):
     """Custom evaluator using Bedrock Claude."""
-    score = evaluate_response_with_bedrock(str(input), str(output), str(expected_output))
-    return EvaluationResult(
-        name="bedrock_quality",
-        value=score,
-        comment=f"Quality score from Claude evaluation: {score:.2f}"
-    )
+    try:
+        print(f"\n[EVALUATOR] Starting evaluation...")
+        print(f"[EVALUATOR] Input: {str(input)[:100]}...")
+        print(f"[EVALUATOR] Output: {str(output)[:100]}...")
+        print(f"[EVALUATOR] Expected: {str(expected_output)[:100]}...")
+
+        score = evaluate_response_with_bedrock(str(input), str(output), str(expected_output))
+
+        print(f"[EVALUATOR] Score calculated: {score}")
+
+        result = EvaluationResult(
+            name="bedrock_quality",
+            value=score,
+            comment=f"Quality score from Claude evaluation: {score:.2f}"
+        )
+
+        print(f"[EVALUATOR] Returning result: {result}")
+        return result
+    except Exception as e:
+        print(f"[EVALUATOR] Error in evaluation: {str(e)}")
+        raise
 
 # Run experiment with Bedrock evaluator
 print(f"\n{'='*80}")
@@ -211,16 +240,33 @@ print(result.format(include_item_results=True))
 
 # Extract quality scores and save to file
 quality_scores = []
-for item_result in result.item_results:
-    for evaluation in item_result.evaluations:
-        if evaluation.name == 'bedrock_quality':
-            evaluation_dict = {
-                "name": evaluation.name,
-                "value": evaluation.value,
-                "comment": evaluation.comment
-            }
-            quality_scores.append(evaluation_dict)
-            print(evaluation_dict)
+
+print(f"\n[RESULTS] Processing experiment results...")
+print(f"[RESULTS] Result type: {type(result)}")
+print(f"[RESULTS] Result attributes: {dir(result) if result else 'None'}")
+
+if hasattr(result, 'item_results'):
+    print(f"[RESULTS] Number of item_results: {len(result.item_results) if result.item_results else 0}")
+
+    for idx, item_result in enumerate(result.item_results or []):
+        print(f"\n[RESULTS] Processing item {idx+1}...")
+        print(f"[RESULTS] Item result type: {type(item_result)}")
+        print(f"[RESULTS] Item result attributes: {dir(item_result) if item_result else 'None'}")
+
+        if hasattr(item_result, 'evaluations'):
+            print(f"[RESULTS] Number of evaluations: {len(item_result.evaluations) if item_result.evaluations else 0}")
+            for evaluation in (item_result.evaluations or []):
+                print(f"[RESULTS] Evaluation: {evaluation}")
+                if hasattr(evaluation, 'name') and evaluation.name == 'bedrock_quality':
+                    evaluation_dict = {
+                        "name": evaluation.name if hasattr(evaluation, 'name') else 'unknown',
+                        "value": evaluation.value if hasattr(evaluation, 'value') else 0,
+                        "comment": evaluation.comment if hasattr(evaluation, 'comment') else 'N/A'
+                    }
+                    quality_scores.append(evaluation_dict)
+                    print(f"[RESULTS] Added score: {evaluation_dict}")
+else:
+    print("[RESULTS] Warning: result does not have item_results attribute")
 
 # Calculate average
 avg_score = sum(s['value'] for s in quality_scores) / len(quality_scores) if quality_scores else 0

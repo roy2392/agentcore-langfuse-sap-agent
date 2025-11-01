@@ -36,5 +36,8 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
     CMD python -c "import os; exit(0 if all([os.getenv('SAP_HOST'), os.getenv('SAP_USER'), os.getenv('SAP_PASSWORD')]) else 1)" || exit 1
 
-# Run SAP MCP server
-CMD ["python", "sap_mcp_server.py"]
+# Copy the HTTP server wrapper
+COPY utils/sap_mcp_http_server.py .
+
+# Run SAP MCP HTTP server (exposes /mcp endpoint on port 8000)
+CMD ["python", "sap_mcp_http_server.py", "--host", "0.0.0.0", "--port", "8000"]

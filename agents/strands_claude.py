@@ -152,23 +152,17 @@ def strands_agent_bedrock(payload):
     strands_telemetry = StrandsTelemetry()
     strands_telemetry.setup_otlp_exporter()
 
-    # Prepare tools list
+    # Prepare tools list - ONLY use SAP tools, exclude built-in Strands tools
     tools_to_use = []
 
-    # Prefer direct SAP tools if available
+    # Use only direct SAP tools if available
     if sap_tools:
         tools_to_use = sap_tools
-        print(f"[Agent] Using direct SAP tools ({len(tools_to_use)} tools)")
-    elif sap_mcp_client:
-        # Fall back to MCP client if direct tools not available
-        try:
-            with sap_mcp_client:
-                tools_to_use = sap_mcp_client.list_tools_sync()
-                print(f"[Agent] Using MCP client tools ({len(tools_to_use)} tools)")
-        except Exception as e:
-            print(f"[Agent] Error getting MCP tools: {e}")
+        print(f"[Agent] Using {len(tools_to_use)} SAP inventory tools (excluding built-in Strands tools)")
     else:
         print("[Agent] Warning: No SAP tools available!")
+        # Do NOT fall back to MCP client - we only want SAP tools
+        # Do NOT use built-in Strands tools like searchLangfuseDocs
 
     # Create the agent
     agent = Agent(

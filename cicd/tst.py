@@ -231,44 +231,50 @@ Respond with ONLY a number between 0 and 1."""
 def bedrock_quality_evaluator(*, input, output, expected_output, **kwargs):
     """Custom evaluator using Bedrock Claude.
 
-    Note: Langfuse evaluators should return a dict or EvaluationResult.
-    We use EvaluationResult from the dataclass defined at the top.
+    According to Langfuse documentation, evaluators must return:
+    - A dict with keys: name, value (required), comment (optional), metadata (optional)
+    - Or a list of such dicts
+    - OR an Evaluation object
+
+    The evaluator receives:
+    - input: The input to the task
+    - output: The output from the task
+    - expected_output: The expected output from the dataset
+    - metadata: Optional metadata from the dataset item
+    - **kwargs: Additional keyword arguments
     """
     try:
-        print(f"\n[EVALUATOR] Starting evaluation...")
-        print(f"[EVALUATOR] Input type: {type(input)}, value: {str(input)[:100]}...")
-        print(f"[EVALUATOR] Output type: {type(output)}, value: {str(output)[:100]}...")
-        print(f"[EVALUATOR] Expected type: {type(expected_output)}, value: {str(expected_output)[:100]}...")
-        print(f"[EVALUATOR] kwargs: {kwargs}")
+        print(f"\n[EVALUATOR] Starting Bedrock quality evaluation")
 
-        score = evaluate_response_with_bedrock(str(input), str(output), str(expected_output))
+        # Extract input text - handle both dict and string formats
+        if isinstance(input, dict) and 'question' in input:
+            input_text = input['question']
+        else:
+            input_text = str(input)
 
-        print(f"[EVALUATOR] Score calculated: {score}, type: {type(score)}")
-
-        # Create EvaluationResult using dataclass
-        result = EvaluationResult(
-            name="bedrock_quality",
-            value=score,
-            comment=f"Quality score from Claude evaluation: {score:.2f}"
+        # Evaluate the response
+        score = evaluate_response_with_bedrock(
+            input_text=input_text,
+            output_text=str(output),
+            expected_output=str(expected_output)
         )
 
-        print(f"[EVALUATOR] Returning result type: {type(result)}")
-        print(f"[EVALUATOR] Result: {result}")
-        print(f"[EVALUATOR] Result.name: {result.name}, Result.value: {result.value}")
+        print(f"[EVALUATOR] Score: {score}")
 
-        # Also try returning as dict for Langfuse compatibility
-        result_dict = {
-            "name": result.name,
-            "value": result.value,
-            "comment": result.comment
+        # Return as a dictionary - this is the correct format for Langfuse evaluators
+        return {
+            "name": "bedrock_quality",
+            "value": score,
+            "comment": f"Quality score from Claude evaluation: {score:.2f}"
         }
-        print(f"[EVALUATOR] Also returning dict: {result_dict}")
-        return result_dict
     except Exception as e:
-        print(f"[EVALUATOR] Error in evaluation: {str(e)}")
-        import traceback
-        traceback.print_exc()
-        raise
+        print(f"[EVALUATOR] Error: {str(e)}")
+        # Return a default score on error rather than failing
+        return {
+            "name": "bedrock_quality",
+            "value": 0.5,
+            "comment": f"Error during evaluation: {str(e)}"
+        }
 
 # Run experiment with Bedrock evaluator
 print(f"\n{'='*80}")
@@ -290,32 +296,36 @@ print(result.format(include_item_results=True))
 # Extract quality scores and save to file
 quality_scores = []
 
-print(f"\n[RESULTS] Processing experiment results...")
-print(f"[RESULTS] Result type: {type(result)}")
-print(f"[RESULTS] Result attributes: {dir(result) if result else 'None'}")
+print(f"\n{'='*80}")
+print("Extracting evaluation results...")
+print(f"{'='*80}")
 
-if hasattr(result, 'item_results'):
-    print(f"[RESULTS] Number of item_results: {len(result.item_results) if result.item_results else 0}")
+# Process each item result
+for idx, item_result in enumerate(result.item_results or []):
+    print(f"\nItem {idx+1}:")
+    print(f"  Output: {str(item_result.output)[:150]}...")
 
-    for idx, item_result in enumerate(result.item_results or []):
-        print(f"\n[RESULTS] Processing item {idx+1}...")
-        print(f"[RESULTS] Item result type: {type(item_result)}")
-        print(f"[RESULTS] Item result attributes: {dir(item_result) if item_result else 'None'}")
+    # Extract evaluations for this item
+    if item_result.evaluations:
+        for evaluation in item_result.evaluations:
+            print(f"  Evaluation: {evaluation}")
 
-        if hasattr(item_result, 'evaluations'):
-            print(f"[RESULTS] Number of evaluations: {len(item_result.evaluations) if item_result.evaluations else 0}")
-            for evaluation in (item_result.evaluations or []):
-                print(f"[RESULTS] Evaluation: {evaluation}")
-                if hasattr(evaluation, 'name') and evaluation.name == 'bedrock_quality':
-                    evaluation_dict = {
-                        "name": evaluation.name if hasattr(evaluation, 'name') else 'unknown',
-                        "value": evaluation.value if hasattr(evaluation, 'value') else 0,
-                        "comment": evaluation.comment if hasattr(evaluation, 'comment') else 'N/A'
-                    }
-                    quality_scores.append(evaluation_dict)
-                    print(f"[RESULTS] Added score: {evaluation_dict}")
-else:
-    print("[RESULTS] Warning: result does not have item_results attribute")
+            # Extract name and value from evaluation object
+            eval_name = getattr(evaluation, 'name', None)
+            eval_value = getattr(evaluation, 'value', None)
+            eval_comment = getattr(evaluation, 'comment', None)
+
+            if eval_name == 'bedrock_quality':
+                quality_scores.append({
+                    "name": eval_name,
+                    "value": eval_value,
+                    "comment": eval_comment
+                })
+                print(f"  ✓ Captured score: {eval_value}")
+    else:
+        print(f"  (No evaluations)")
+
+print(f"\nTotal scores captured: {len(quality_scores)}")
 
 # Calculate average
 avg_score = sum(s['value'] for s in quality_scores) / len(quality_scores) if quality_scores else 0

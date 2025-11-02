@@ -14,8 +14,9 @@ import os
 import logging
 from typing import Any, Dict, List
 
-# Fix import path - handle both module and direct execution
-if __name__ != '__main__':
+# Import SAP API functions (works in both Docker and local execution)
+try:
+    # Try relative import first (when used as module)
     from .test_sap_api import (
         get_stock_levels,
         get_low_stock_materials,
@@ -27,7 +28,8 @@ if __name__ != '__main__':
         get_complete_po_data,
         _missing_env
     )
-else:
+except ImportError:
+    # Fall back to direct import (Docker or standalone execution)
     from test_sap_api import (
         get_stock_levels,
         get_low_stock_materials,

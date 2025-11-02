@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
 """
-SAP MCP HTTP Server
+SAP MCP HTTP Server - AgentCore Gateway Compatible
 
-Provides HTTP server interface for SAP MCP Server to expose Model Context Protocol endpoints.
-This allows the Strands agent to connect to the SAP MCP server via HTTP.
+Implements streamable-HTTP MCP server for AWS Bedrock AgentCore Gateway.
+Follows AWS best practices:
+- Stateless streamable-HTTP protocol
+- Available at 0.0.0.0:8000/mcp
+- Supports Mcp-Session-Id header for session continuity
+- Compatible with AgentCore Gateway MCP targets
 
 The server exposes:
-- GET /mcp/tools - List available tools
-- POST /mcp/tool/execute - Execute a tool call
+- POST /mcp - MCP protocol endpoint (tools list, tool execution)
 - GET /health - Health check endpoint
 """
 
@@ -92,11 +95,13 @@ class SAPMCPHTTPHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(response).encode())
 
     def do_POST(self):
-        """Handle POST requests"""
+        """Handle POST requests - MCP Protocol"""
         parsed_path = urlparse(self.path)
         path = parsed_path.path
 
-        logger.info(f"POST {path}")
+        # Extract session ID from headers (AgentCore Gateway adds this)
+        session_id = self.headers.get('Mcp-Session-Id', 'default')
+        logger.info(f"POST {path} [session: {session_id}]")
 
         # Read request body
         content_length = int(self.headers.get('Content-Length', 0))
@@ -113,15 +118,53 @@ class SAPMCPHTTPHandler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(error_response).encode())
             return
 
-        if path == '/mcp/tool/execute':
+        # MCP Protocol endpoint - handles both list tools and call tool
+        if path == '/mcp' or path == '/mcp/':
             try:
-                result = handle_tool_call(request_data)
+                method = request_data.get('method')
+
+                if method == 'tools/list':
+                    # List available tools
+                    tools_data = list_tools()
+                    response = {
+                        'tools': tools_data.get('tools', [])
+                    }
+
+                elif method == 'tools/call':
+                    # Execute a tool
+                    params = request_data.get('params', {})
+                    tool_name = params.get('name')
+                    tool_input = params.get('arguments', {})
+
+                    result = handle_tool_call({
+                        'tool': tool_name,
+                        'input': tool_input
+                    })
+
+                    response = {
+                        'content': [
+                            {
+                                'type': 'text',
+                                'text': json.dumps(result.get('result', {}), ensure_ascii=False)
+                            }
+                        ]
+                    }
+                else:
+                    self.send_response(400)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    error_response = {'error': f'Unknown method: {method}'}
+                    self.wfile.write(json.dumps(error_response).encode())
+                    return
+
                 self.send_response(200)
                 self.send_header('Content-type', 'application/json')
+                self.send_header('Mcp-Session-Id', session_id)
                 self.end_headers()
-                self.wfile.write(json.dumps(result).encode())
+                self.wfile.write(json.dumps(response).encode())
+
             except Exception as e:
-                logger.error(f"Error executing tool: {str(e)}")
+                logger.error(f"Error handling MCP request: {str(e)}")
                 self.send_response(500)
                 self.send_header('Content-type', 'application/json')
                 self.end_headers()

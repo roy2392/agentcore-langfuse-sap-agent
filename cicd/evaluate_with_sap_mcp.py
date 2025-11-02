@@ -27,22 +27,24 @@ class EvaluationResult:
     comment: str = ""
 
 class SAPMCPEvaluator:
-    """Evaluate agent responses using SAP MCP for ground truth"""
+    """Evaluate agent responses using deployed Bedrock agent"""
 
-    def __init__(self):
-        """Initialize evaluator with SAP MCP server"""
-        try:
-            from utils.langfuse import get_langfuse_client
-            self.langfuse = get_langfuse_client()
-        except Exception as e:
-            logger.warning(f"Langfuse not available: {e}")
-            self.langfuse = None
+    def __init__(self, agent_arn):
+        """Initialize evaluator with agent ARN and SAP MCP server for ground truth"""
+        self.agent_arn = agent_arn
 
         try:
             from utils.sap_mcp_server import SAPMCPServer
             self.mcp_server = SAPMCPServer()
         except Exception as e:
             logger.error(f"SAP MCP Server not available: {e}")
+            raise
+
+        try:
+            from utils.agent import invoke_agent
+            self.invoke_agent = invoke_agent
+        except Exception as e:
+            logger.error(f"Agent invocation not available: {e}")
             raise
 
     def evaluate_stock_level_query(self) -> EvaluationResult:
@@ -179,8 +181,8 @@ class SAPMCPEvaluator:
 
         po_number = "4500000520"
 
-        # Get SAP data
-        print(f"\n1. Fetching PO {po_number} data via MCP...")
+        # Get SAP ground truth data
+        print(f"\n1. Fetching SAP ground truth for PO {po_number}...")
         po_result = self.mcp_server.execute_tool(
             "get_complete_po_data",
             {"po_number": po_number}
@@ -189,7 +191,7 @@ class SAPMCPEvaluator:
         if not po_result or not po_result.get('header'):
             return EvaluationResult(
                 name="po_status_query",
-                value=0.5,
+                value=0.0,
                 comment=f"PO {po_number} not found in SAP"
             )
 
@@ -197,93 +199,205 @@ class SAPMCPEvaluator:
         items = po_result.get('items', [])
         summary = po_result.get('summary', {})
 
-        print(f"\n2. SAP Response:")
-        print(f"   Supplier: {header.get('Supplier', 'N/A')}")
-        print(f"   Date: {header.get('PurchaseOrderDate', 'N/A')}")
-        print(f"   Items: {len(items)}")
-        print(f"   Total Value: {summary.get('total_value', 0)}")
-        print(f"   Currency: {header.get('DocumentCurrency', 'ILS')}")
+        print(f"   ✓ SAP Ground Truth: {len(items)} items, {summary.get('total_value', 0)} {header.get('DocumentCurrency', 'USD')}")
 
-        # Format response
-        expected_output = (
-            f"הזמנה {po_number}:\n"
-            f"- ספק: {header.get('Supplier', 'N/A')}\n"
-            f"- תאריך: {header.get('PurchaseOrderDate', 'N/A')}\n"
-            f"- פריטים: {len(items)}\n"
-            f"- סה\"כ ערך: {summary.get('total_value', 0)} {header.get('DocumentCurrency', 'ILS')}"
-        )
+        # Invoke the actual agent
+        print(f"\n2. Invoking agent...")
+        try:
+            agent_response = self.invoke_agent(self.agent_arn, question)
 
-        print(f"\n3. Expected Hebrew Response:")
-        print(f"   {expected_output}")
+            if 'error' in agent_response:
+                return EvaluationResult(
+                    name="po_status_query",
+                    value=0.0,
+                    comment=f"Agent error: {agent_response['error']}"
+                )
 
-        score = 1.0 if header else 0.5
+            response_text = agent_response.get('response', '')
+            print(f"   ✓ Agent responded (length: {len(response_text)} chars)")
 
-        return EvaluationResult(
-            name="po_status_query",
-            value=score,
-            comment=f"PO {po_number}: {len(items)} items, {summary.get('total_value', 0)} {header.get('DocumentCurrency', 'ILS')}"
-        )
+            # Check if response contains key information
+            has_supplier = header.get('Supplier', '') in response_text
+            has_items_count = str(len(items)) in response_text
+            has_value = str(int(summary.get('total_value', 0))) in response_text
 
-    def evaluate_warehouse_query(self) -> EvaluationResult:
-        """Evaluate: "מה המצב הכללי של המלאי במחסן 01?" """
+            score = 0.0
+            if has_supplier:
+                score += 0.4
+            if has_items_count:
+                score += 0.3
+            if has_value:
+                score += 0.3
 
-        print("\n" + "="*80)
-        print("EVALUATION: Warehouse Status Query")
-        print("="*80)
+            print(f"\n3. Response Analysis:")
+            print(f"   Supplier mentioned: {'✓' if has_supplier else '✗'}")
+            print(f"   Items count mentioned: {'✓' if has_items_count else '✗'}")
+            print(f"   Total value mentioned: {'✓' if has_value else '✗'}")
 
-        question = "מה המצב הכללי של המלאי במחסן 01?"
-        print(f"\nQuestion: {question}")
-
-        # Get SAP data
-        print("\n1. Fetching warehouse stock via MCP...")
-        warehouse_result = self.mcp_server.execute_tool(
-            "get_warehouse_stock",
-            {"storage_location": "01"}
-        )
-
-        if warehouse_result.get('status') != 'success':
             return EvaluationResult(
-                name="warehouse_query",
-                value=0.5,
-                comment=f"Failed: {warehouse_result.get('message')}"
+                name="po_status_query",
+                value=score,
+                comment=f"Agent accuracy: {score*100:.0f}% (traced in Langfuse)"
             )
 
-        entries = warehouse_result.get('data', {}).get('entries', [])
+        except Exception as e:
+            logger.error(f"Agent invocation failed: {e}")
+            return EvaluationResult(
+                name="po_status_query",
+                value=0.0,
+                comment=f"Agent invocation failed: {str(e)[:100]}"
+            )
 
-        total_available = 0
-        total_on_hand = 0
-        for entry in entries:
-            total_available += entry.get('AvailableQuantity', 0)
-            total_on_hand += entry.get('QuantityOnHand', 0)
+    def evaluate_po_supplier_query(self) -> EvaluationResult:
+        """Evaluate: "מי הספק של הזמנת רכש 4500000520?" """
 
-        print(f"\n2. SAP Response:")
-        print(f"   Total Items: {len(entries)}")
-        print(f"   Total Available: {total_available}")
-        print(f"   Total On Hand: {total_on_hand}")
+        print("\n" + "="*80)
+        print("EVALUATION: PO Supplier Query")
+        print("="*80)
 
-        expected_output = (
-            f"סטטוס מחסן 01:\n"
-            f"- סה\"כ פריטים: {len(entries)}\n"
-            f"- סה\"כ זמינה: {total_available} יחידות\n"
-            f"- סה\"כ ביד: {total_on_hand} יחידות"
+        question = "מי הספק של הזמנת רכש 4500000520?"
+        print(f"\nQuestion: {question}")
+
+        po_number = "4500000520"
+
+        # Get ground truth
+        po_result = self.mcp_server.execute_tool(
+            "get_complete_po_data",
+            {"po_number": po_number}
         )
 
-        print(f"\n3. Expected Hebrew Response:")
-        print(f"   {expected_output}")
+        if not po_result or not po_result.get('header'):
+            return EvaluationResult("po_supplier_query", 0.0, f"PO {po_number} not found")
 
-        score = 1.0 if len(entries) > 0 else 0.5
+        supplier = po_result.get('header', {}).get('Supplier', 'N/A')
+        print(f"\n1. SAP Ground Truth: Supplier = {supplier}")
 
-        return EvaluationResult(
-            name="warehouse_query",
-            value=score,
-            comment=f"Warehouse 01: {len(entries)} items, {total_available} available"
+        # Invoke agent
+        print(f"\n2. Invoking agent...")
+        try:
+            agent_response = self.invoke_agent(self.agent_arn, question)
+
+            if 'error' in agent_response:
+                return EvaluationResult("po_supplier_query", 0.0, f"Agent error: {agent_response['error']}")
+
+            response_text = agent_response.get('response', '')
+            has_supplier = supplier in response_text
+
+            score = 1.0 if has_supplier else 0.0
+
+            print(f"   ✓ Agent responded")
+            print(f"\n3. Supplier in response: {'✓' if has_supplier else '✗'}")
+
+            return EvaluationResult(
+                name="po_supplier_query",
+                value=score,
+                comment=f"Supplier {'found' if has_supplier else 'not found'} (traced in Langfuse)"
+            )
+        except Exception as e:
+            return EvaluationResult("po_supplier_query", 0.0, f"Error: {str(e)[:100]}")
+
+    def evaluate_po_items_query(self) -> EvaluationResult:
+        """Evaluate: "מה הפריטים בהזמנת רכש 4500000520?" """
+
+        print("\n" + "="*80)
+        print("EVALUATION: PO Items Query")
+        print("="*80)
+
+        question = "מה הפריטים בהזמנת רכש 4500000520?"
+        print(f"\nQuestion: {question}")
+
+        po_number = "4500000520"
+        po_result = self.mcp_server.execute_tool(
+            "get_complete_po_data",
+            {"po_number": po_number}
         )
+
+        if not po_result or not po_result.get('items'):
+            return EvaluationResult("po_items_query", 0.0, "No items found")
+
+        items = po_result.get('items', [])
+        print(f"\n1. SAP Ground Truth: {len(items)} items")
+
+        # Invoke agent
+        print(f"\n2. Invoking agent...")
+        try:
+            agent_response = self.invoke_agent(self.agent_arn, question)
+
+            if 'error' in agent_response:
+                return EvaluationResult("po_items_query", 0.0, f"Agent error: {agent_response['error']}")
+
+            response_text = agent_response.get('response', '')
+
+            # Check if at least 3 material numbers are mentioned
+            materials_found = sum(1 for item in items if item.get('material', '') in response_text)
+            score = min(1.0, materials_found / 3)  # Full score if 3+ materials mentioned
+
+            print(f"   ✓ Agent responded")
+            print(f"\n3. Materials mentioned: {materials_found}/{len(items)}")
+
+            return EvaluationResult(
+                name="po_items_query",
+                value=score,
+                comment=f"{materials_found} materials found (traced in Langfuse)"
+            )
+        except Exception as e:
+            return EvaluationResult("po_items_query", 0.0, f"Error: {str(e)[:100]}")
+
+    def evaluate_po_value_query(self) -> EvaluationResult:
+        """Evaluate: "מה הערך הכולל של הזמנת רכש 4500000520?" """
+
+        print("\n" + "="*80)
+        print("EVALUATION: PO Total Value Query")
+        print("="*80)
+
+        question = "מה הערך הכולל של הזמנת רכש 4500000520?"
+        print(f"\nQuestion: {question}")
+
+        po_number = "4500000520"
+        po_result = self.mcp_server.execute_tool(
+            "get_complete_po_data",
+            {"po_number": po_number}
+        )
+
+        if not po_result or not po_result.get('summary'):
+            return EvaluationResult("po_value_query", 0.0, "No summary found")
+
+        total_value = po_result.get('summary', {}).get('total_value', 0)
+        currency = po_result.get('header', {}).get('DocumentCurrency', 'USD')
+
+        print(f"\n1. SAP Ground Truth: {total_value} {currency}")
+
+        # Invoke agent
+        print(f"\n2. Invoking agent...")
+        try:
+            agent_response = self.invoke_agent(self.agent_arn, question)
+
+            if 'error' in agent_response:
+                return EvaluationResult("po_value_query", 0.0, f"Agent error: {agent_response['error']}")
+
+            response_text = agent_response.get('response', '')
+
+            # Check if value is mentioned (accept approximate values)
+            has_value = str(int(total_value)) in response_text or currency in response_text
+            score = 1.0 if has_value else 0.0
+
+            print(f"   ✓ Agent responded")
+            print(f"\n3. Value mentioned: {'✓' if has_value else '✗'}")
+
+            return EvaluationResult(
+                name="po_value_query",
+                value=score,
+                comment=f"Value {'found' if has_value else 'not found'} (traced in Langfuse)"
+            )
+        except Exception as e:
+            return EvaluationResult("po_value_query", 0.0, f"Error: {str(e)[:100]}")
 
     def run_evaluation(self) -> Dict[str, Any]:
-        """Run complete evaluation suite"""
+        """Run complete evaluation suite - ONLY Purchase Order queries (accessible endpoints)"""
 
         print("\n" + "="*80)
         print("                 SAP MCP EVALUATION SUITE")
+        print("                  (Purchase Orders Only)")
         print("="*80)
 
         # Check credentials
@@ -296,33 +410,42 @@ class SAPMCPEvaluator:
             return None
 
         print(f"\n✓ SAP credentials configured")
+        print(f"ℹ Note: Only testing Purchase Order endpoints (AWSDEMO user has limited permissions)")
 
-        # Run evaluations
+        # Run evaluations - ONLY PO queries that work
         results = []
 
-        try:
-            results.append(self.evaluate_stock_level_query())
-        except Exception as e:
-            logger.error(f"Stock level evaluation failed: {e}")
-            results.append(EvaluationResult("stock_level_query", 0.0, str(e)))
-
-        try:
-            results.append(self.evaluate_low_stock_query())
-        except Exception as e:
-            logger.error(f"Low stock evaluation failed: {e}")
-            results.append(EvaluationResult("low_stock_query", 0.0, str(e)))
-
+        # Test 1: PO Status
         try:
             results.append(self.evaluate_po_status_query())
         except Exception as e:
             logger.error(f"PO status evaluation failed: {e}")
             results.append(EvaluationResult("po_status_query", 0.0, str(e)))
 
+        # Test 2: PO Supplier
         try:
-            results.append(self.evaluate_warehouse_query())
+            results.append(self.evaluate_po_supplier_query())
         except Exception as e:
-            logger.error(f"Warehouse evaluation failed: {e}")
-            results.append(EvaluationResult("warehouse_query", 0.0, str(e)))
+            logger.error(f"PO supplier evaluation failed: {e}")
+            results.append(EvaluationResult("po_supplier_query", 0.0, str(e)))
+
+        # Test 3: PO Items
+        try:
+            results.append(self.evaluate_po_items_query())
+        except Exception as e:
+            logger.error(f"PO items evaluation failed: {e}")
+            results.append(EvaluationResult("po_items_query", 0.0, str(e)))
+
+        # Test 4: PO Total Value
+        try:
+            results.append(self.evaluate_po_value_query())
+        except Exception as e:
+            logger.error(f"PO value evaluation failed: {e}")
+            results.append(EvaluationResult("po_value_query", 0.0, str(e)))
+
+        # REMOVED: Stock queries - AWSDEMO user doesn't have permission
+        # Stock level, low stock, and warehouse queries get 403 Forbidden
+        # Only Purchase Order endpoints are accessible
 
         # Generate summary
         print("\n" + "="*80)
@@ -361,8 +484,52 @@ class SAPMCPEvaluator:
         return eval_results
 
 def main():
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Evaluate SAP agent with real Bedrock invocations")
+    parser.add_argument(
+        '--agent-arn',
+        type=str,
+        help='ARN of the deployed Bedrock agent to evaluate'
+    )
+    parser.add_argument(
+        '--agent-name',
+        type=str,
+        default='strands_haiku_inventory_PRD',
+        help='Name of the deployed agent (will look up ARN)'
+    )
+
+    args = parser.parse_args()
+
+    # Get agent ARN
+    agent_arn = args.agent_arn
+
+    if not agent_arn:
+        # Look up agent by name
+        print(f"Looking up agent: {args.agent_name}...")
+        try:
+            import boto3
+            client = boto3.client('bedrock-agentcore-control', region_name='us-east-1')
+            response = client.list_agent_runtimes()
+
+            for agent in response.get('agentRuntimes', []):
+                if agent['agentRuntimeName'] == args.agent_name:
+                    agent_arn = agent['agentRuntimeArn']
+                    print(f"✓ Found agent: {agent_arn}")
+                    break
+
+            if not agent_arn:
+                print(f"❌ Agent not found: {args.agent_name}")
+                print("\nAvailable agents:")
+                for agent in response.get('agentRuntimes', []):
+                    print(f"  - {agent['agentRuntimeName']}")
+                return 1
+        except Exception as e:
+            print(f"❌ Error looking up agent: {e}")
+            return 1
+
     try:
-        evaluator = SAPMCPEvaluator()
+        evaluator = SAPMCPEvaluator(agent_arn)
         results = evaluator.run_evaluation()
 
         if results:
@@ -370,7 +537,8 @@ def main():
             with open('sap_mcp_evaluation_results.json', 'w') as f:
                 json.dump(results, f, indent=2)
 
-            print(f"✓ Results saved to: sap_mcp_evaluation_results.json")
+            print(f"\n✓ Results saved to: sap_mcp_evaluation_results.json")
+            print(f"✓ Traces available in Langfuse!")
 
             return 0 if results['average_quality_score'] >= 0.7 else 1
         else:

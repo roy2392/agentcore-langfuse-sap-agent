@@ -3,45 +3,34 @@ import argparse
 import json
 from bedrock_agentcore.runtime import BedrockAgentCoreApp
 import os
-from strands import Agent, tool
+from strands import Agent
 from strands.models import BedrockModel
 from strands.telemetry import StrandsTelemetry
 
-# Import SAP API functions for direct tool integration
-import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+# AWS AgentCore Gateway Architecture:
+# Agent → AgentCore Gateway → SAP MCP Server → SAP OData API
+#
+# The agent accesses tools through AgentCore Gateway, NOT directly.
+# Gateway handles authentication, authorization, and credential injection.
+# SAP credentials are managed by AgentCore Identity, not embedded in agent code.
 
-try:
-    # Try to import SAP API functions directly
-    from utils.test_sap_api import (
-        get_stock_levels,
-        get_low_stock_materials,
-        get_material_info,
-        get_warehouse_stock,
-        get_purchase_orders_for_material,
-        get_goods_receipt,
-        forecast_material_demand,
-        get_complete_po_data,
-    )
-    SAP_API_AVAILABLE = True
-except ImportError as e:
-    print(f"Warning: SAP API functions not available: {e}")
-    SAP_API_AVAILABLE = False
-
-# Optional: Also try MCP client connection as fallback
+# Import MCP client for Gateway connection
 try:
     from mcp.client.streamable_http import streamablehttp_client
     from strands.tools.mcp.mcp_client import MCPClient
 
-    sap_mcp_host = os.getenv("SAP_MCP_HOST", "localhost")
-    sap_mcp_port = os.getenv("SAP_MCP_PORT", "8000")
-    sap_mcp_url = f"http://{sap_mcp_host}:{sap_mcp_port}/mcp"
+    # Gateway endpoint URL (will be set via environment variable)
+    gateway_url = os.getenv("GATEWAY_ENDPOINT_URL")
 
-    sap_mcp_client = MCPClient(lambda: streamablehttp_client(sap_mcp_url))
-    print(f"[Agent] MCP client initialized: {sap_mcp_url}")
+    if gateway_url:
+        mcp_client = MCPClient(lambda: streamablehttp_client(gateway_url))
+        print(f"[Agent] Connected to AgentCore Gateway: {gateway_url}")
+    else:
+        print("[Agent] WARNING: GATEWAY_ENDPOINT_URL not set - agent will have NO tools")
+        mcp_client = None
 except Exception as e:
-    print(f"Warning: MCP client initialization failed: {e}")
-    sap_mcp_client = None
+    print(f"[Agent] ERROR: Failed to initialize Gateway client: {e}")
+    mcp_client = None
 
 # Optional: Initialize Langfuse telemetry if available (non-blocking)
 try:
@@ -70,70 +59,8 @@ bedrock_model = get_bedrock_model()
 # Define the agent's system prompt - Hebrew Inventory Management
 system_prompt = os.getenv("SYSTEM_PROMPT", "אתה סוכן מומחה בניהול מלאי. התשובות שלך צריכות להיות בעברית בלבד. השתמש ב-SAP OData API כדי לשלוף נתוני מלאי, מזמנות קנייה וכמויות של מוצרים. עבור כל שאלה על מלאי, ספק מידע מדויק וממוגן מה-SAP. ודא שהתשובה שלך כוללת: (1) פרטי מלאי נוכחי, (2) כמויות שהוזמנו, (3) תאריכים רלוונטיים, ו-(4) המלצות על סמך סטטוס המלאי.")
 
-# Define SAP inventory tools if SAP API is available
-sap_tools = []
-if SAP_API_AVAILABLE:
-    @tool
-    def sap_get_stock_levels(material_number: str) -> str:
-        """Get current stock levels for a specific material from SAP"""
-        result = get_stock_levels(material_number)
-        return json.dumps(result, ensure_ascii=False)
-
-    @tool
-    def sap_get_low_stock_materials(threshold: int = None) -> str:
-        """Get list of materials with low stock levels from SAP"""
-        result = get_low_stock_materials(threshold)
-        return json.dumps(result, ensure_ascii=False)
-
-    @tool
-    def sap_get_material_info(material_number: str) -> str:
-        """Get detailed information about a material from SAP"""
-        result = get_material_info(material_number)
-        return json.dumps(result, ensure_ascii=False)
-
-    @tool
-    def sap_get_warehouse_stock(plant: str = None, storage_location: str = None) -> str:
-        """Get warehouse stock summary from SAP"""
-        result = get_warehouse_stock(plant, storage_location)
-        return json.dumps(result, ensure_ascii=False)
-
-    @tool
-    def sap_get_purchase_orders(material_number: str) -> str:
-        """Get pending purchase orders for a material from SAP"""
-        result = get_purchase_orders_for_material(material_number)
-        return json.dumps(result, ensure_ascii=False)
-
-    @tool
-    def sap_get_goods_receipt(po_number: str) -> str:
-        """Get goods receipt information for a purchase order from SAP"""
-        result = get_goods_receipt(po_number)
-        return json.dumps(result, ensure_ascii=False)
-
-    @tool
-    def sap_forecast_demand(material_number: str, days_ahead: int = 30) -> str:
-        """Get demand forecast for a material from SAP"""
-        result = forecast_material_demand(material_number, days_ahead)
-        return json.dumps(result, ensure_ascii=False)
-
-    @tool
-    def sap_get_po_data(po_number: str) -> str:
-        """Get complete purchase order data from SAP"""
-        result = get_complete_po_data(po_number)
-        return json.dumps(result, ensure_ascii=False)
-
-    # Collect all SAP tools
-    sap_tools = [
-        sap_get_stock_levels,
-        sap_get_low_stock_materials,
-        sap_get_material_info,
-        sap_get_warehouse_stock,
-        sap_get_purchase_orders,
-        sap_get_goods_receipt,
-        sap_forecast_demand,
-        sap_get_po_data,
-    ]
-
-    print(f"[Agent] Loaded {len(sap_tools)} SAP tools")
+# Tools are provided by AgentCore Gateway, not embedded in agent code
+# The Gateway exposes SAP MCP Server tools to the agent
 
 app = BedrockAgentCoreApp()
 
@@ -141,6 +68,7 @@ app = BedrockAgentCoreApp()
 def strands_agent_bedrock(payload):
     """
     Invoke the agent with a payload
+    Agent uses tools from AgentCore Gateway (NOT embedded tools)
     """
 
     user_input = payload.get("prompt")
@@ -152,19 +80,20 @@ def strands_agent_bedrock(payload):
     strands_telemetry = StrandsTelemetry()
     strands_telemetry.setup_otlp_exporter()
 
-    # Prepare tools list - ONLY use SAP tools, exclude built-in Strands tools
+    # Get tools from AgentCore Gateway via MCP client
     tools_to_use = []
 
-    # Use only direct SAP tools if available
-    if sap_tools:
-        tools_to_use = sap_tools
-        print(f"[Agent] Using {len(tools_to_use)} SAP inventory tools (excluding built-in Strands tools)")
+    if mcp_client:
+        try:
+            # Tools are dynamically loaded from Gateway
+            tools_to_use = [mcp_client]
+            print(f"[Agent] Using tools from AgentCore Gateway")
+        except Exception as e:
+            print(f"[Agent] ERROR: Failed to load Gateway tools: {e}")
     else:
-        print("[Agent] Warning: No SAP tools available!")
-        # Do NOT fall back to MCP client - we only want SAP tools
-        # Do NOT use built-in Strands tools like searchLangfuseDocs
+        print("[Agent] WARNING: No Gateway connection - agent will run without tools")
 
-    # Create the agent
+    # Create the agent with Gateway tools
     agent = Agent(
         model=bedrock_model,
         system_prompt=system_prompt,

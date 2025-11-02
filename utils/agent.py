@@ -143,6 +143,8 @@ def deploy_agent(model, system_prompt, force_redeploy=False, environment="DEV"):
     bedrock_model_id = model["model_id"]
     system_prompt_value = system_prompt["prompt"]
 
+    # AWS AgentCore Gateway pattern: Agent uses Gateway endpoint for tools
+    # NO direct SAP credentials in agent environment!
     launch_result = agentcore_runtime.launch(
         env_vars={
             "BEDROCK_MODEL_ID": bedrock_model_id,
@@ -152,11 +154,9 @@ def deploy_agent(model, system_prompt, force_redeploy=False, environment="DEV"):
             "OTEL_EXPORTER_OTLP_HEADERS": otel_auth_header,  # Add Langfuse OTEL auth header
             "DISABLE_ADOT_OBSERVABILITY": "true",
             "SYSTEM_PROMPT": system_prompt_value,
-            # SAP MCP Server connection configuration
-            # In AWS deployment, this should point to the SAP MCP service/container
-            # For local testing, it defaults to localhost:8000 in the agent code
-            "SAP_MCP_HOST": os.getenv("SAP_MCP_HOST", "sap-mcp-server"),  # Service name or IP
-            "SAP_MCP_PORT": os.getenv("SAP_MCP_PORT", "8000")
+            # AgentCore Gateway endpoint (tools accessed through Gateway)
+            # Gateway handles authentication and routes to SAP MCP Server
+            "GATEWAY_ENDPOINT_URL": os.getenv("GATEWAY_ENDPOINT_URL", ""),
         }
     )
 

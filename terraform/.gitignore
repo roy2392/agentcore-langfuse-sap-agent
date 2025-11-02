@@ -1,0 +1,29 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfvars
+!terraform.tfvars.example
+.terraform/
+.terraform.lock.hcl
+terraform.lock.hcl
+
+# Outputs
+gateway_output.json
+target_output.json
+target_config.json
+
+# Lambda packages
+lambda_package.zip
+lambda_layer.zip
+lambda_layer/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

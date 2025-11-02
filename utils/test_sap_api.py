@@ -51,7 +51,10 @@ def _build_url(path, po_number=None, select=None, orderby=None):
         params["$orderby"] = orderby
     if SAP_CLIENT:
         params["sap-client"] = SAP_CLIENT
-    return f'https://{SAP_HOST}{path}?{urllib.parse.urlencode(params, safe="\'() ")}'
+    # Use variable to avoid backslash in f-string
+    safe_chars = "'() "
+    query_string = urllib.parse.urlencode(params, safe=safe_chars)
+    return f'https://{SAP_HOST}{path}?{query_string}'
 
 
 def _basic_auth_header(user, pwd):

@@ -1,0 +1,9 @@
+# AWS Configuration
+aws_region  = "us-east-1"
+environment = "prd"
+
+# SAP Credentials (DO NOT COMMIT ACTUAL VALUES)
+# Copy this file to terraform.tfvars and fill in your actual credentials
+sap_host     = "aws-saptfc-demosystems-sapsbx.awsforsap.sap.aws.dev"
+sap_user     = "AWSDEMO"
+sap_password = "your-password-here"

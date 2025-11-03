@@ -39,6 +39,11 @@ jobs:
         aws-region: ${{ secrets.AWS_REGION }}
     
     - name: Deploy Agent TST
+      env:
+        GATEWAY_ENDPOINT_URL: ${{ secrets.GATEWAY_ENDPOINT_URL }}
+        COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
+        COGNITO_CLIENT_SECRET: ${{ secrets.COGNITO_CLIENT_SECRET }}
+        COGNITO_DOMAIN: ${{ secrets.COGNITO_DOMAIN }}
       run: |
         python cicd/deploy_agent.py --environment TST
     
@@ -55,5 +60,10 @@ jobs:
         python cicd/delete_agent.py
     
     - name: Deploy Agent PRD
+      env:
+        GATEWAY_ENDPOINT_URL: ${{ secrets.GATEWAY_ENDPOINT_URL }}
+        COGNITO_CLIENT_ID: ${{ secrets.COGNITO_CLIENT_ID }}
+        COGNITO_CLIENT_SECRET: ${{ secrets.COGNITO_CLIENT_SECRET }}
+        COGNITO_DOMAIN: ${{ secrets.COGNITO_DOMAIN }}
       run: |
         python cicd/deploy_agent.py --environment PRD

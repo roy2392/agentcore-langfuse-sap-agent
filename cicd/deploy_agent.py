@@ -35,8 +35,10 @@ def main():
     """Main function to deploy the agent."""
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Deploy agent to specified environment')
-    parser.add_argument('--environment', choices=['TST', 'PRD'], 
+    parser.add_argument('--environment', choices=['TST', 'PRD'],
                        help='Environment to deploy to (TST or PRD)', default='TST')
+    parser.add_argument('--force-redeploy', action='store_true',
+                       help='Force redeploy even if agent exists')
     args = parser.parse_args()
     
     environment = args.environment
@@ -62,7 +64,7 @@ def main():
         result = deploy_agent(
             model=model,
             system_prompt=system_prompt,
-            force_redeploy=False,
+            force_redeploy=args.force_redeploy,
             environment=environment
         )
         

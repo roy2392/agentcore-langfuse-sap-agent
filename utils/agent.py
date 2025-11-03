@@ -157,6 +157,10 @@ def deploy_agent(model, system_prompt, force_redeploy=False, environment="DEV"):
             # AgentCore Gateway endpoint (tools accessed through Gateway)
             # Gateway handles authentication and routes to SAP MCP Server
             "GATEWAY_ENDPOINT_URL": os.getenv("GATEWAY_ENDPOINT_URL", ""),
+            # OAuth credentials for Gateway authentication (CUSTOM_JWT authorizer)
+            "COGNITO_CLIENT_ID": os.getenv("COGNITO_CLIENT_ID", ""),
+            "COGNITO_CLIENT_SECRET": os.getenv("COGNITO_CLIENT_SECRET", ""),
+            "COGNITO_DOMAIN": os.getenv("COGNITO_DOMAIN", ""),
         }
     )
 

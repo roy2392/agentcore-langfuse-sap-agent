@@ -1,6 +1,7 @@
 uv
 ddgs
 boto3
+httpx
 bedrock-agentcore
 bedrock-agentcore-starter-toolkit
 strands-agents[otel]

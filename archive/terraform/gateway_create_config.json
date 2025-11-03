@@ -1,0 +1,13 @@
+{
+  "name": "sap-inventory-gateway-prd",
+  "description": "Gateway for SAP inventory management via MCP",
+  "roleArn": "arn:aws:iam::654537381132:role/AgentCoreGatewayRole-prd",
+  "protocolType": "MCP",
+  "authorizerType": "CUSTOM_JWT",
+  "authorizerConfiguration": {
+    "customJWTAuthorizer": {
+      "discoveryUrl": "https://cognito-idp.us-east-1.amazonaws.com/us-east-1_7m45pE9la/.well-known/openid-configuration",
+      "allowedClients": ["56d6r0as0inbf6gvjjfrmp0c9v"]
+    }
+  }
+}

@@ -6,16 +6,29 @@ resource "null_resource" "agentcore_gateway" {
   triggers = {
     gateway_name = "sap-inventory-gateway-${var.environment}"
     role_arn     = aws_iam_role.gateway_role.arn
-    cognito_arn  = aws_cognito_user_pool.gateway_oauth.arn
+    auth_type    = "CUSTOM_JWT"
+    cognito_pool = aws_cognito_user_pool.gateway_oauth.endpoint
   }
 
   provisioner "local-exec" {
     command = <<-EOT
+      cat > ${path.module}/gateway_create_config.json <<GATEWAYJSON
+{
+  "name": "${self.triggers.gateway_name}",
+  "description": "Gateway for SAP inventory management via MCP",
+  "roleArn": "${self.triggers.role_arn}",
+  "protocolType": "MCP",
+  "authorizerType": "CUSTOM_JWT",
+  "authorizerConfiguration": {
+    "customJWTAuthorizer": {
+      "discoveryUrl": "https://cognito-idp.us-east-1.amazonaws.com/${aws_cognito_user_pool.gateway_oauth.id}/.well-known/openid-configuration",
+      "allowedClients": ["${aws_cognito_user_pool_client.gateway_client.id}"]
+    }
+  }
+}
+GATEWAYJSON
       aws bedrock-agentcore-control create-gateway \
-        --name ${self.triggers.gateway_name} \
-        --description "Gateway for SAP inventory management via MCP" \
-        --role-arn ${self.triggers.role_arn} \
-        --authorizer-configuration customJWTAuthorizer={discoveryUrl=https://cognito-idp.${var.aws_region}.amazonaws.com/${aws_cognito_user_pool.gateway_oauth.id}/.well-known/jwks.json,allowedAudience=[${aws_cognito_user_pool_client.gateway_client.id}]} \
+        --cli-input-json file://${path.module}/gateway_create_config.json \
         --region ${var.aws_region} \
         --output json > ${path.module}/gateway_output.json
     EOT
@@ -24,19 +37,20 @@ resource "null_resource" "agentcore_gateway" {
   provisioner "local-exec" {
     when    = destroy
     command = <<-EOT
-      GATEWAY_ID=$(cat ${path.module}/gateway_output.json | jq -r '.gatewayId')
-      if [ ! -z "$GATEWAY_ID" ] && [ "$GATEWAY_ID" != "null" ]; then
-        aws bedrock-agentcore-control delete-gateway \
-          --gateway-identifier $GATEWAY_ID \
-          --region ${var.aws_region} || true
+      cd "${path.module}" || exit 0
+      if [ -f gateway_output.json ]; then
+        GATEWAY_ID=$(cat gateway_output.json | jq -r '.gatewayId' 2>/dev/null || echo "")
+        if [ ! -z "$GATEWAY_ID" ] && [ "$GATEWAY_ID" != "null" ]; then
+          aws bedrock-agentcore-control delete-gateway \
+            --gateway-identifier "$GATEWAY_ID" \
+            --region us-east-1 || true
+        fi
       fi
     EOT
   }
 
   depends_on = [
-    aws_iam_role.gateway_role,
-    aws_cognito_user_pool.gateway_oauth,
-    aws_cognito_user_pool_client.gateway_client
+    aws_iam_role.gateway_role
   ]
 }
 
@@ -92,7 +106,12 @@ resource "null_resource" "gateway_target_get_po" {
         }
       }
     }
-  }
+  },
+  "credentialProviderConfigurations": [
+    {
+      "credentialProviderType": "GATEWAY_IAM_ROLE"
+    }
+  ]
 }
 EOF
       aws bedrock-agentcore-control create-gateway-target \
@@ -105,14 +124,15 @@ EOF
   provisioner "local-exec" {
     when    = destroy
     command = <<-EOT
-      if [ -f ${path.module}/target_output.json ]; then
-        TARGET_ID=$(cat ${path.module}/target_output.json | jq -r '.targetId')
-        GATEWAY_ID=$(cat ${path.module}/gateway_output.json | jq -r '.gatewayId')
+      cd "${path.module}" || exit 0
+      if [ -f target_output.json ]; then
+        TARGET_ID=$(cat target_output.json | jq -r '.targetId' 2>/dev/null || echo "")
+        GATEWAY_ID=$(cat gateway_output.json | jq -r '.gatewayId' 2>/dev/null || echo "")
         if [ ! -z "$TARGET_ID" ] && [ "$TARGET_ID" != "null" ]; then
           aws bedrock-agentcore-control delete-gateway-target \
-            --gateway-identifier $GATEWAY_ID \
-            --target-id $TARGET_ID \
-            --region ${var.aws_region} || true
+            --gateway-identifier "$GATEWAY_ID" \
+            --target-id "$TARGET_ID" \
+            --region us-east-1 || true
         fi
       fi
     EOT

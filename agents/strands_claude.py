@@ -16,20 +16,37 @@ from strands.telemetry import StrandsTelemetry
 
 # Import MCP client for Gateway connection
 try:
-    from mcp.client.streamable_http import streamablehttp_client
     from strands.tools.mcp.mcp_client import MCPClient
 
     # Gateway endpoint URL (will be set via environment variable)
     gateway_url = os.getenv("GATEWAY_ENDPOINT_URL")
 
     if gateway_url:
-        mcp_client = MCPClient(lambda: streamablehttp_client(gateway_url))
-        print(f"[Agent] Connected to AgentCore Gateway: {gateway_url}")
+        # Gateway configured with authorizerType=CUSTOM_JWT (OAuth)
+        # Use OAuth Bearer token authentication
+        from agents.gateway_oauth_transport import gateway_oauth_transport
+        from agents.oauth_token_manager import create_token_manager_from_env
+
+        # Create OAuth token manager from environment variables
+        token_manager = create_token_manager_from_env()
+
+        if token_manager:
+            # Create a callable that returns the OAuth-authenticated MCP transport
+            def create_transport():
+                return gateway_oauth_transport(gateway_url, token_manager)
+
+            mcp_client = MCPClient(create_transport)
+            print(f"[Agent] Connected to AgentCore Gateway (OAuth): {gateway_url}")
+        else:
+            print("[Agent] ERROR: Failed to initialize OAuth token manager - no Gateway connection")
+            mcp_client = None
     else:
         print("[Agent] WARNING: GATEWAY_ENDPOINT_URL not set - agent will have NO tools")
         mcp_client = None
 except Exception as e:
     print(f"[Agent] ERROR: Failed to initialize Gateway client: {e}")
+    import traceback
+    traceback.print_exc()
     mcp_client = None
 
 # Optional: Initialize Langfuse telemetry if available (non-blocking)

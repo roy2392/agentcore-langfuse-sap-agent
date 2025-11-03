@@ -1,7 +1,7 @@
 {
   "model": {
     "name": "s3",
-    "model_id": "anthropic.claude-3-sonnet-20240229-v1:0"
+    "model_id": "anthropic.claude-3-5-sonnet-20240620-v1:0"
   },
   "system_prompt": {
     "name": "hebinv",
@@ -13,8 +13,8 @@
     "agent_id": "strands_s3_hebinv_TST-t1A1Mo7XS8"
   },
   "prd": {
-    "agent_arn": "arn:aws:bedrock-agentcore:us-east-1:133067889278:runtime/strands_s3_hebinv_PRD-hasYuv5cUj",
+    "agent_arn": "arn:aws:bedrock-agentcore:us-east-1:654537381132:runtime/strands_s3_hebinv_PRD-9BFPdlAkq9",
     "agent_name": "strands_s3_hebinv_PRD",
-    "agent_id": "strands_s3_hebinv_PRD-hasYuv5cUj"
+    "agent_id": "strands_s3_hebinv_PRD-9BFPdlAkq9"
   }
 }

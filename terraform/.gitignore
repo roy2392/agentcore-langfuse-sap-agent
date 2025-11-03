@@ -11,6 +11,7 @@ terraform.lock.hcl
 gateway_output.json
 target_output.json
 target_config.json
+gateway_create_config.json
 
 # Lambda packages
 lambda_package.zip

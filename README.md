@@ -47,27 +47,49 @@ The AgentOps lifecycle implements a multi-environment setup (DEV, TST, PRD) to e
 .
 ├── agents/
 │   ├── strands_claude.py          # Strands-based agent implementation with MCP tools
-│   └── requirements.txt            # Agent dependencies (uv, boto3, strands-agents, etc.)
+│   ├── oauth_token_manager.py     # OAuth token management for MCP Gateway
+│   ├── gateway_oauth_transport.py # OAuth transport layer for Gateway
+│   └── requirements.txt           # Agent dependencies (uv, boto3, strands-agents, etc.)
 ├── utils/
-│   ├── agent.py                    # Agent deployment, invocation, and lifecycle management
-│   ├── langfuse.py                 # Langfuse experiment runner and evaluation functions
-│   └── aws.py                      # AWS utilities (SSM parameter store, etc.)
+│   ├── agent.py                   # Agent deployment, invocation, and lifecycle management
+│   ├── langfuse.py                # Langfuse experiment runner and evaluation functions
+│   ├── aws.py                     # AWS utilities (SSM parameter store, etc.)
+│   ├── gateway.py                 # Gateway utilities
+│   ├── get_oauth_token.sh         # OAuth token helper for MCP Gateway testing
+│   ├── test_mcp_gateway.py        # Direct MCP Gateway testing script
+│   └── test_e2e_agent.py          # End-to-end agent testing with real SAP data
+├── lambda_functions/
+│   └── get_complete_po_data.py    # Lambda function for SAP OData integration
+├── terraform/
+│   ├── main.tf                    # Main Terraform configuration
+│   ├── gateway.tf                 # MCP Gateway infrastructure with OAuth
+│   ├── lambda.tf                  # Lambda function infrastructure
+│   ├── cognito.tf                 # AWS Cognito OAuth configuration
+│   ├── iam.tf                     # IAM roles and policies
+│   ├── secrets.tf                 # Secrets Manager configuration
+│   └── terraform.tfvars.example   # Example Terraform variables
 ├── experimentation/
-│   ├── hpo.py                      # Hyperparameter optimization script
-│   ├── hpo_config.json             # HPO configuration (models and prompts)
-│   └── hpo_config_tmp.json         # Temporary HPO configuration
+│   ├── hpo.py                     # Hyperparameter optimization script
+│   └── hpo_config.json            # HPO configuration (models and prompts)
 ├── simulation/
-│   ├── simulate_users.py           # User interaction simulation and load testing
-│   └── load_config.json            # Test prompts and scenarios
+│   ├── simulate_users.py          # User interaction simulation and load testing
+│   └── load_config.json           # Test prompts and scenarios
 ├── cicd/
-│   ├── deploy_agent.py             # CI/CD agent deployment script
-│   ├── delete_agent.py             # CI/CD agent cleanup script
-│   ├── check_factuality.py         # Factuality validation and quality checks
-│   ├── hp_config.json              # CI/CD hyperparameter configuration
-│   └── tst.py                      # Testing utilities
-├── Dockerfile                      # Container configuration for agent deployment
-├── requirements.txt                # Project dependencies
-└── README.md                       # This file
+│   ├── deploy_agent.py            # CI/CD agent deployment script
+│   ├── delete_agent.py            # CI/CD agent cleanup script
+│   ├── check_factuality.py        # Factuality validation and quality checks
+│   ├── hp_config.json             # CI/CD hyperparameter configuration
+│   └── tst.py                     # Testing utilities
+├── docs/
+│   ├── ARCHITECTURE.md            # System architecture documentation
+│   ├── DEPLOYMENT_GUIDE.md        # Deployment instructions
+│   ├── E2E_TEST_GUIDE.md          # End-to-end testing documentation
+│   └── MCP_INSPECTOR_GUIDE.md     # Guide for testing with MCP Inspector
+├── archive/                       # Archived experimental/obsolete files
+│   └── README.md                  # Archive documentation
+├── Dockerfile                     # Container configuration for agent deployment
+├── requirements.txt               # Project dependencies
+└── README.md                      # This file
 ```
 
 ## Setup
@@ -166,6 +188,186 @@ The GitHub Actions workflow will automatically:
 - Run evaluations
 - Deploy to production (if quality gates pass)
 - Clean up test resources
+
+### SAP MCP Gateway Integration
+
+This project integrates with SAP systems through the **AWS Bedrock AgentCore Gateway** using the **Model Context Protocol (MCP)**. The Gateway provides secure, OAuth-protected access to SAP OData services through Lambda functions.
+
+#### Architecture Overview
+
+```
+User Question (Hebrew/English)
+    ↓
+AWS Bedrock Agent Runtime
+    ↓
+MCP Gateway (OAuth Protected)
+    ↓
+Lambda Function
+    ↓
+SAP OData API (C_PURCHASEORDER_FS_SRV)
+    ↓
+Real SAP Data Response
+```
+
+#### Gateway Configuration
+
+The MCP Gateway is deployed using Terraform and configured with:
+
+- **Authorization**: CUSTOM_JWT (OAuth 2.0 Client Credentials)
+- **Authentication Provider**: AWS Cognito
+- **Protocol**: MCP (Model Context Protocol)
+- **Target**: AWS Lambda functions for SAP OData integration
+
+**Key Infrastructure Components:**
+
+1. **MCP Gateway** (`terraform/gateway.tf`):
+   - Provides secure MCP endpoint for agent tool calls
+   - OAuth-protected with Cognito JWT validation
+   - Routes requests to Lambda functions
+
+2. **AWS Cognito** (`terraform/cognito.tf`):
+   - User pool for OAuth authentication
+   - Client credentials flow for machine-to-machine auth
+   - JWT token generation and validation
+
+3. **Lambda Functions** (`terraform/lambda.tf`, `lambda_functions/`):
+   - `get_complete_po_data`: Retrieves SAP purchase order details
+   - Calls real SAP OData service (`C_PURCHASEORDER_FS_SRV`)
+   - Returns structured JSON with PO header, items, and summary
+
+#### SAP OData Service Integration
+
+The Lambda function integrates with the SAP demo system using:
+
+- **Service**: `C_PURCHASEORDER_FS_SRV` (SAP Fiori service for purchase orders)
+- **Authentication**: SAP credentials stored in AWS Secrets Manager
+- **Data**: Real purchase order data including:
+  - PO headers (supplier, dates, values)
+  - Line items (materials, quantities, prices)
+  - Computed summaries (totals, item counts)
+
+**Example Purchase Order Data** (PO 4500000520):
+- **Supplier**: USSU-VSF08
+- **Total Value**: $209,236.00
+- **Items**: 7 bicycle components (BKC-990 series)
+- **Products**: Frame, Handle Bars, Seat, Wheels, Forks, Brakes, Drive Train
+
+#### Testing the Integration
+
+The project provides multiple testing approaches to verify the complete integration:
+
+##### 1. Direct Gateway Testing with MCP Inspector
+
+Use the MCP Inspector tool to test the Gateway directly with OAuth authentication.
+
+**Quick Start:**
+```bash
+# Get OAuth token
+./utils/get_oauth_token.sh
+
+# Follow the comprehensive guide
+open MCP_INSPECTOR_GUIDE.md
+```
+
+The guide covers:
+- Getting OAuth access tokens from Cognito
+- Configuring MCP Inspector with Gateway URL and authentication
+- Testing tool discovery and invocation
+- Verifying real SAP data responses
+
+##### 2. Automated Gateway Testing
+
+Run the Python test script to verify Gateway functionality:
+
+```bash
+python utils/test_mcp_gateway.py
+```
+
+This script:
+- Obtains OAuth token from Cognito
+- Initializes MCP session with the Gateway
+- Lists available tools
+- Calls `get_complete_po_data` with test PO number
+- Validates response contains real SAP data
+
+##### 3. End-to-End Agent Testing
+
+Test the complete flow from user question to SAP data response:
+
+```bash
+python utils/test_e2e_agent.py
+```
+
+This comprehensive test:
+- Connects to deployed Bedrock agent
+- Sends Hebrew language questions about purchase orders
+- Verifies agent uses MCP Gateway with OAuth
+- Confirms Lambda invocation and SAP API call
+- Validates response contains real SAP data (not mock)
+
+**Expected Results:**
+```
+🧪 End-to-End Agent Test
+Testing: User → Agent → MCP Gateway (OAuth) → Lambda → Real SAP
+================================================================================
+
+✅ Found expected data: 4500000520, BKC-990, Frame, 209236, USSU-VSF08
+✅ Agent → MCP Gateway (OAuth) → Lambda → Real SAP Data
+
+Results: 2/2 tests passed
+🎉 SUCCESS! End-to-end flow is working correctly!
+```
+
+For detailed testing instructions, see:
+- **MCP Inspector Testing**: [MCP_INSPECTOR_GUIDE.md](MCP_INSPECTOR_GUIDE.md)
+- **End-to-End Testing**: [E2E_TEST_GUIDE.md](E2E_TEST_GUIDE.md)
+
+#### Deploying Gateway Infrastructure
+
+The Gateway, Cognito, and Lambda infrastructure is managed with Terraform:
+
+```bash
+cd terraform
+
+# Initialize Terraform
+terraform init
+
+# Review planned changes
+terraform plan
+
+# Deploy infrastructure
+terraform apply
+
+# Outputs will include:
+# - Gateway URL
+# - Cognito client credentials
+# - Lambda function ARNs
+```
+
+After deployment, the Gateway configuration is saved to `terraform/gateway_output.json` for use by agents and testing scripts.
+
+#### Troubleshooting
+
+**Common Issues:**
+
+1. **OAuth Authentication Failures (401/403)**:
+   - Verify Cognito client credentials are correct
+   - Ensure Gateway is configured with CUSTOM_JWT authorizer
+   - Check token hasn't expired (1 hour lifetime)
+
+2. **No SAP Data in Responses**:
+   - Verify Lambda has SAP credentials in Secrets Manager
+   - Check Lambda CloudWatch logs for OData API errors
+   - Test Lambda directly: `aws lambda invoke --function-name sap-get-complete-po-data-prd`
+
+3. **Gateway Timeout Errors**:
+   - SAP OData API may be slow or unavailable
+   - Check Lambda timeout configuration
+   - Review network connectivity to SAP system
+
+4. **Mock Data Appearing**:
+   - This should NOT happen - Lambda uses real `C_PURCHASEORDER_FS_SRV`
+   - If mock data appears, check `lambda_functions/get_complete_po_data.py`
 
 ## Golden Dataset
 

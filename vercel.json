@@ -12,6 +12,7 @@
       "dest": "app.py"
     }
   ],
+  "regions": ["fra1"],
   "env": {
     "AGENT_ENV": "PRD"
   }

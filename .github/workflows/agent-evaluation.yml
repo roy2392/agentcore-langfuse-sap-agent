@@ -22,6 +22,11 @@ jobs:
     steps:
     - uses: actions/checkout@v4
     
+    - name: Clear Git Cache
+      run: |
+        git rm -r --cached .
+        git reset --hard
+    
     - name: Set up Python
       uses: actions/setup-python@v4
       with:

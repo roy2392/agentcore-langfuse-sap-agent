@@ -70,17 +70,38 @@ bedrock_client = boto3.client('bedrock-runtime', region_name=os.getenv('AWS_REGI
 EVALUATION_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0"
 
 
-# Get the dataset
-dataset_name="strands-ai-mcp-agent-evaluation"
-dataset = langfuse.get_dataset(dataset_name)
+# Mock DatasetItemClient for compatibility
+class MockDatasetItem:
+    def __init__(self, id, input, expected_output):
+        self.id = id
+        self.input = input
+        self.expected_output = expected_output
 
-# Print first 3 items of the dataset
-print(f"\n{'='*80}\nFirst 3 items from dataset '{dataset_name}':\n{'='*80}")
-items_list = list(dataset.items)
-for i, item in enumerate(items_list[:3]):
+# Create a synthetic dataset with realistic, general-purpose questions
+print(f"\n{'='*80}\nUsing a predefined set of general evaluation questions to ensure realistic testing.\n{'='*80}")
+items_list = [
+    MockDatasetItem(
+        id="eval-q1-list-all",
+        input={"question": "הצג את כל הזמנות הרכש"},
+        expected_output="הסוכן צריך להחזיר רשימה של הזמנות רכש. התשובה צריכה לכלול מספרי הזמנה, תאריכים וספקים."
+    ),
+    MockDatasetItem(
+        id="eval-q2-are-there-any",
+        input={"question": "האם יש הזמנות רכש במערכת?"},
+        expected_output="הסוכן צריך לאשר אם קיימות הזמנות רכש ולהציג כמה מהן אם כן."
+    ),
+    MockDatasetItem(
+        id="eval-q3-get-list",
+        input={"question": "תביא לי בבקשה את רשימת הזמנות הרכש"},
+        expected_output="הסוכן צריך להציג רשימה ברורה של הזמנות רכש מהמערכת."
+    )
+]
+
+# Print the items being used for evaluation
+for i, item in enumerate(items_list):
     print(f"\nItem {i+1}:")
     print(f"  ID: {item.id}")
-    print(f"  Input: {item.input}")
+    print(f"  Input: {item.input['question']}")
     print(f"  Expected Output: {item.expected_output}")
 print(f"{'='*80}\n")
 

@@ -21,3 +21,4 @@ experimentation/hpo_config_tmp.json
 # Log files
 *.log
 .vercel
+.bedrock_agentcore.yaml

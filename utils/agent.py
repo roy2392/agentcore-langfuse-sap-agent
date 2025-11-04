@@ -51,7 +51,7 @@ otel_auth_header = f"Authorization=Basic {langfuse_auth_token}"
 
 
 
-def deploy_agent(model, system_prompt, force_redeploy=False, environment="DEV"):
+def deploy_agent(model, system_prompt, gateway_url, cognito_client_id, cognito_client_secret, cognito_domain, force_redeploy=False, environment="DEV"):
     """
     Deploys an Amazon Bedrock AgentCore Runtime agent with the specified configuration.
     
@@ -154,13 +154,10 @@ def deploy_agent(model, system_prompt, force_redeploy=False, environment="DEV"):
             "OTEL_EXPORTER_OTLP_HEADERS": otel_auth_header,  # Add Langfuse OTEL auth header
             "DISABLE_ADOT_OBSERVABILITY": "true",
             "SYSTEM_PROMPT": system_prompt_value,
-            # AgentCore Gateway endpoint (tools accessed through Gateway)
-            # Gateway handles authentication and routes to SAP MCP Server
-            "GATEWAY_ENDPOINT_URL": os.getenv("GATEWAY_ENDPOINT_URL", ""),
-            # OAuth credentials for Gateway authentication (CUSTOM_JWT authorizer)
-            "COGNITO_CLIENT_ID": os.getenv("COGNITO_CLIENT_ID", ""),
-            "COGNITO_CLIENT_SECRET": os.getenv("COGNITO_CLIENT_SECRET", ""),
-            "COGNITO_DOMAIN": os.getenv("COGNITO_DOMAIN", ""),
+            "GATEWAY_ENDPOINT_URL": gateway_url,
+            "COGNITO_CLIENT_ID": cognito_client_id,
+            "COGNITO_CLIENT_SECRET": cognito_client_secret,
+            "COGNITO_DOMAIN": cognito_domain,
         }
     )
 

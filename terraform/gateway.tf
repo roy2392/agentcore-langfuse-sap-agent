@@ -168,6 +168,11 @@ output "cognito_client_id" {
   sensitive   = true
 }
 
+output "cognito_domain" {
+  description = "Cognito Domain for OAuth token endpoint"
+  value       = aws_cognito_user_pool_domain.gateway_oauth.domain
+}
+
 output "lambda_function_arns" {
   description = "ARNs of SAP tool Lambda functions"
   value = {

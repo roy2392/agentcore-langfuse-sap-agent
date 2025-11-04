@@ -53,11 +53,53 @@ def main():
     
     model = config["model"]
     system_prompt = config["system_prompt"]
+
+    # Read gateway URL from terraform/gateway_output.json
+    gateway_url = ""
+    cognito_client_id = ""
+    cognito_domain = ""
+    cognito_client_secret = os.getenv("COGNITO_CLIENT_SECRET", "")
+
+    try:
+        with open("terraform/gateway_output.json", 'r') as f:
+            gateway_output = json.load(f)
+            gateway_url = gateway_output.get("gatewayUrl", "")
+
+            authorizer_config = gateway_output.get("authorizerConfiguration", {}).get("customJWTAuthorizer", {})
+            cognito_client_id = authorizer_config.get("allowedClients", [""])[0]
+
+            # Get Cognito domain - the Gateway is always created with "prd" environment
+            # regardless of which agent environment (TST/PRD) we're deploying
+            # Format: sap-gateway-prd-{account_id}
+            import boto3
+            account_id = boto3.client('sts').get_caller_identity()['Account']
+            cognito_domain = f"sap-gateway-prd-{account_id}"
+
+            if not gateway_url:
+                print("Error: gatewayUrl not found in terraform/gateway_output.json")
+                sys.exit(1)
+            if not cognito_client_id:
+                print("Error: Cognito Client ID not found in terraform/gateway_output.json")
+                sys.exit(1)
+            if not cognito_client_secret:
+                print("Error: COGNITO_CLIENT_SECRET environment variable not set.")
+                sys.exit(1)
+
+    except FileNotFoundError:
+        print("Error: terraform/gateway_output.json not found. Please run terraform apply first.")
+        sys.exit(1)
+    except json.JSONDecodeError as e:
+        print(f"Error: Invalid JSON in terraform/gateway_output.json: {e}")
+        sys.exit(1)
     
     print(f"Deploying agent with:")
     print(f"  Model: {model['name']} ({model['model_id']})")
     print(f"  System Prompt: {system_prompt['name']}")
     print(f"  Environment: {environment}")
+    print(f"  Gateway URL: {gateway_url}")
+    print(f"  Cognito Client ID: {cognito_client_id}")
+    print(f"  Cognito Domain: {cognito_domain}")
+    print(f"  Cognito Client Secret: {'*' * len(cognito_client_secret) if cognito_client_secret else 'Not Set'}") # Mask secret
     
     try:
         # Deploy the agent with specified environment
@@ -65,7 +107,11 @@ def main():
             model=model,
             system_prompt=system_prompt,
             force_redeploy=args.force_redeploy,
-            environment=environment
+            environment=environment,
+            gateway_url=gateway_url,
+            cognito_client_id=cognito_client_id,
+            cognito_client_secret=cognito_client_secret,
+            cognito_domain=cognito_domain
         )
         
         print(f"Agent deployment successful!")

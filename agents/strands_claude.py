@@ -120,11 +120,13 @@ def strands_agent_bedrock(payload):
     # Use Langfuse telemetry if available
     if _langfuse_client:
         with _langfuse_client.start_as_current_observation(name='strands-agent', trace_context={"trace_id": trace_id, "parent_observation_id": parent_obs_id}):
-            response = agent(user_input)
+            response_stream = agent.stream(user_input)
+            for chunk in response_stream:
+                yield chunk
     else:
-        response = agent(user_input)
-
-    return response.message['content'][0]['text']
+        response_stream = agent.stream(user_input)
+        for chunk in response_stream:
+            yield chunk
 
 if __name__ == "__main__":
     app.run()

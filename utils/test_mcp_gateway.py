@@ -7,7 +7,7 @@ import json
 import sys
 
 # Gateway configuration
-GATEWAY_URL = "https://sap-inventory-gateway-prd-g33wqycje0.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
+GATEWAY_URL = "https://sap-inventory-gateway-prd-td3ict6das.gateway.bedrock-agentcore.us-east-1.amazonaws.com/mcp"
 CLIENT_ID = "56d6r0as0inbf6gvjjfrmp0c9v"
 CLIENT_SECRET = "19aalq8aoj3s3es9dl7furb78lfvtpmoietlobta7l8q1pjki35h"
 TOKEN_ENDPOINT = "https://sap-gateway-prd-654537381132.auth.us-east-1.amazoncognito.com/oauth2/token"

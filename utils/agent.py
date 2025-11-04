@@ -2,8 +2,15 @@ import base64
 import boto3
 import sys
 import os
-from bedrock_agentcore_starter_toolkit import Runtime
 from boto3.session import Session
+
+# Only import Runtime if needed (not for web UI)
+try:
+    from bedrock_agentcore_starter_toolkit import Runtime
+    agentcore_runtime = Runtime()
+except ImportError:
+    Runtime = None
+    agentcore_runtime = None
 
 # Add parent directory to path for proper imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -12,17 +19,16 @@ sys.path.insert(0, parent_dir)
 try:
     from langfuse import get_client as langfuse_get_client
 except ImportError:
-    # Fallback if direct import fails
-    import importlib
-    langfuse_module = importlib.import_module('langfuse')
-    langfuse_get_client = getattr(langfuse_module, 'get_client')
+    langfuse_get_client = None
 
-from utils.aws import get_ssm_parameter
+try:
+    from utils.aws import get_ssm_parameter
+except ImportError:
+    def get_ssm_parameter(param_name):
+        return os.getenv(param_name.split('/')[-1], '')
 
 boto_session = Session()
 region = boto_session.region_name
-
-agentcore_runtime = Runtime()
 
 
 class ExistingAgentLaunchResult:
@@ -35,18 +41,32 @@ class ExistingAgentLaunchResult:
         self.already_deployed = True
 
 
-LANGFUSE_PROJECT_NAME = get_ssm_parameter("/langfuse/LANGFUSE_PROJECT_NAME")
-LANGFUSE_SECRET_KEY = get_ssm_parameter("/langfuse/LANGFUSE_SECRET_KEY")
-LANGFUSE_PUBLIC_KEY = get_ssm_parameter("/langfuse/LANGFUSE_PUBLIC_KEY")
-LANGFUSE_HOST = get_ssm_parameter("/langfuse/LANGFUSE_HOST")
+# Langfuse configuration - optional for web UI
+try:
+    LANGFUSE_PROJECT_NAME = get_ssm_parameter("/langfuse/LANGFUSE_PROJECT_NAME")
+    LANGFUSE_SECRET_KEY = get_ssm_parameter("/langfuse/LANGFUSE_SECRET_KEY")
+    LANGFUSE_PUBLIC_KEY = get_ssm_parameter("/langfuse/LANGFUSE_PUBLIC_KEY")
+    LANGFUSE_HOST = get_ssm_parameter("/langfuse/LANGFUSE_HOST")
 
     # Langfuse configuration
-otel_endpoint = f'{LANGFUSE_HOST}/api/public/otel'
-langfuse_project_name = LANGFUSE_PROJECT_NAME
-langfuse_secret_key = LANGFUSE_SECRET_KEY
-langfuse_public_key = LANGFUSE_PUBLIC_KEY
-langfuse_auth_token = base64.b64encode(f"{langfuse_public_key}:{langfuse_secret_key}".encode()).decode()
-otel_auth_header = f"Authorization=Basic {langfuse_auth_token}"
+    otel_endpoint = f'{LANGFUSE_HOST}/api/public/otel'
+    langfuse_project_name = LANGFUSE_PROJECT_NAME
+    langfuse_secret_key = LANGFUSE_SECRET_KEY
+    langfuse_public_key = LANGFUSE_PUBLIC_KEY
+    langfuse_auth_token = base64.b64encode(f"{langfuse_public_key}:{langfuse_secret_key}".encode()).decode()
+    otel_auth_header = f"Authorization=Basic {langfuse_auth_token}"
+except Exception as e:
+    print(f"Warning: Langfuse configuration not available: {str(e)}")
+    LANGFUSE_PROJECT_NAME = ""
+    LANGFUSE_SECRET_KEY = ""
+    LANGFUSE_PUBLIC_KEY = ""
+    LANGFUSE_HOST = ""
+    otel_endpoint = ""
+    langfuse_project_name = ""
+    langfuse_secret_key = ""
+    langfuse_public_key = ""
+    langfuse_auth_token = ""
+    otel_auth_header = ""
 
 
 
@@ -125,6 +145,9 @@ def deploy_agent(model, system_prompt, gateway_url, cognito_client_id, cognito_c
         print("Proceeding with deployment...")
     
     # Proceed with deployment
+    if not agentcore_runtime:
+        raise ImportError("bedrock_agentcore_starter_toolkit is required for deployment")
+
     response = agentcore_runtime.configure(
         entrypoint="./agents/strands_claude.py",
         auto_create_execution_role=True,
@@ -146,6 +169,7 @@ def deploy_agent(model, system_prompt, gateway_url, cognito_client_id, cognito_c
     # AWS AgentCore Gateway pattern: Agent uses Gateway endpoint for tools
     # NO direct SAP credentials in agent environment!
     launch_result = agentcore_runtime.launch(
+        auto_update_on_conflict=True,
         env_vars={
             "BEDROCK_MODEL_ID": bedrock_model_id,
             "LANGFUSE_PROJECT_NAME": langfuse_project_name,
@@ -194,13 +218,13 @@ def invoke_agent(agent_arn, prompt, session_id=None):
         # Try to get Langfuse context, but don't fail if unavailable
         trace_id = None
         obs_id = None
-        try:
-            if langfuse_get_client:
+        if langfuse_get_client:
+            try:
                 client = langfuse_get_client()
                 trace_id = client.get_current_trace_id() if client else None
                 obs_id = client.get_current_observation_id() if client else None
-        except Exception as e:
-            print(f"Note: Langfuse context not available: {str(e)}")
+            except Exception as e:
+                print(f"Note: Langfuse context not available: {str(e)}")
 
         # Prepare the payload
         payload = json.dumps({"prompt": prompt, 
@@ -245,8 +269,8 @@ def invoke_agent(agent_arn, prompt, session_id=None):
             # Handle standard JSON response
             content = []
             for chunk in response.get("response", []):
-                content.append(chunk.decode('utf-8'))
-            
+                content.append(chunk.decode('utf-8', errors='replace'))
+
             return {
                 'response': json.loads(''.join(content)),
                 'session_id': session_id,

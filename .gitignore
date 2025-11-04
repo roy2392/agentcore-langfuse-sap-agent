@@ -20,3 +20,4 @@ experimentation/hpo_config_tmp.json
 
 # Log files
 *.log
+.vercel

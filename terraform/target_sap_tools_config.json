@@ -1,0 +1,106 @@
+{
+  "gatewayIdentifier": "sap-inventory-gateway-prd-td3ict6das",
+  "name": "sap-tools-target",
+  "description": "SAP tools for listing, searching orders and checking stock",
+  "targetConfiguration": {
+    "mcp": {
+      "lambda": {
+        "lambdaArn": "arn:aws:lambda:us-east-1:654537381132:function:sap-tools-prd",
+        "toolSchema": {
+          "inlinePayload": [
+            {
+              "name": "list_purchase_orders",
+              "description": "List purchase orders with optional filters (date, supplier, status). Use this when user asks for 'all orders', 'recent orders', 'orders from supplier X', etc.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of orders to return (default 20, max 100)"
+                  },
+                  "date_from": {
+                    "type": "string",
+                    "description": "Filter orders from this date (YYYY-MM-DD format)"
+                  },
+                  "supplier": {
+                    "type": "string",
+                    "description": "Filter by supplier code"
+                  },
+                  "status": {
+                    "type": "string",
+                    "description": "Filter by order status"
+                  }
+                }
+              }
+            },
+            {
+              "name": "search_purchase_orders",
+              "description": "Search purchase orders by PO number, supplier, or material. Use this when user wants to find specific orders matching criteria.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "search_term": {
+                    "type": "string",
+                    "description": "Term to search for (PO number, supplier code, material number)"
+                  },
+                  "search_field": {
+                    "type": "string",
+                    "description": "Field to search in: po_number, supplier, material, or all"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of results (default 10)"
+                  }
+                },
+                "required": ["search_term"]
+              }
+            },
+            {
+              "name": "get_material_stock",
+              "description": "Get current stock levels for materials. Use this when user asks about 'stock', 'inventory', 'available quantity', or 'low stock items'.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "material_number": {
+                    "type": "string",
+                    "description": "Specific material number to check"
+                  },
+                  "plant": {
+                    "type": "string",
+                    "description": "Filter by plant code"
+                  },
+                  "low_stock_only": {
+                    "type": "boolean",
+                    "description": "Only return items with low stock (below threshold)"
+                  },
+                  "threshold": {
+                    "type": "number",
+                    "description": "Stock threshold for low_stock_only filter (default 10)"
+                  }
+                }
+              }
+            },
+            {
+              "name": "get_orders_in_transit",
+              "description": "Get purchase orders that are in transit or being delivered. Use this when user asks about 'orders in shipping', 'orders being delivered', 'pending deliveries', etc.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of orders to return (default 20)"
+                  }
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  "credentialProviderConfigurations": [
+    {
+      "credentialProviderType": "GATEWAY_IAM_ROLE"
+    }
+  ]
+}

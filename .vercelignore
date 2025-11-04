@@ -1,0 +1,12 @@
+archive/
+docs/
+img/
+experimentation/
+simulation/
+terraform/
+.github/
+.git/
+*.pyc
+__pycache__/
+.env
+*.log

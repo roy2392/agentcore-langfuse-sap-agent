@@ -54,42 +54,48 @@ def main():
     model = config["model"]
     system_prompt = config["system_prompt"]
 
-    # Read gateway URL from terraform/gateway_output.json
-    gateway_url = ""
-    cognito_client_id = ""
-    cognito_domain = ""
+    # Read configuration from terraform/gateway_output.json (local) or environment variables (CI/CD)
+    gateway_url = os.getenv("GATEWAY_ENDPOINT_URL", "")
+    cognito_client_id = os.getenv("COGNITO_CLIENT_ID", "")
+    cognito_domain = os.getenv("COGNITO_DOMAIN", "")
     cognito_client_secret = os.getenv("COGNITO_CLIENT_SECRET", "")
 
-    try:
-        with open("terraform/gateway_output.json", 'r') as f:
-            gateway_output = json.load(f)
-            gateway_url = gateway_output.get("gatewayUrl", "")
+    # Try to read from terraform output file if it exists (local development)
+    if os.path.exists("terraform/gateway_output.json") and not gateway_url:
+        print("Reading configuration from terraform/gateway_output.json...")
+        try:
+            with open("terraform/gateway_output.json", 'r') as f:
+                gateway_output = json.load(f)
+                gateway_url = gateway_output.get("gatewayUrl", "")
 
-            authorizer_config = gateway_output.get("authorizerConfiguration", {}).get("customJWTAuthorizer", {})
-            cognito_client_id = authorizer_config.get("allowedClients", [""])[0]
+                authorizer_config = gateway_output.get("authorizerConfiguration", {}).get("customJWTAuthorizer", {})
+                cognito_client_id = authorizer_config.get("allowedClients", [""])[0]
 
-            # Get Cognito domain - the Gateway is always created with "prd" environment
-            # regardless of which agent environment (TST/PRD) we're deploying
-            # Format: sap-gateway-prd-{account_id}
-            import boto3
-            account_id = boto3.client('sts').get_caller_identity()['Account']
-            cognito_domain = f"sap-gateway-prd-{account_id}"
+                # Get Cognito domain - the Gateway is always created with "prd" environment
+                # regardless of which agent environment (TST/PRD) we're deploying
+                # Format: sap-gateway-prd-{account_id}
+                import boto3
+                account_id = boto3.client('sts').get_caller_identity()['Account']
+                cognito_domain = f"sap-gateway-prd-{account_id}"
 
-            if not gateway_url:
-                print("Error: gatewayUrl not found in terraform/gateway_output.json")
-                sys.exit(1)
-            if not cognito_client_id:
-                print("Error: Cognito Client ID not found in terraform/gateway_output.json")
-                sys.exit(1)
-            if not cognito_client_secret:
-                print("Error: COGNITO_CLIENT_SECRET environment variable not set.")
-                sys.exit(1)
+        except json.JSONDecodeError as e:
+            print(f"Error: Invalid JSON in terraform/gateway_output.json: {e}")
+            sys.exit(1)
+    elif not gateway_url:
+        print("Using configuration from environment variables (CI/CD mode)...")
 
-    except FileNotFoundError:
-        print("Error: terraform/gateway_output.json not found. Please run terraform apply first.")
+    # Validate required configuration
+    if not gateway_url:
+        print("Error: Gateway URL not configured. Set GATEWAY_ENDPOINT_URL environment variable or ensure terraform/gateway_output.json exists.")
         sys.exit(1)
-    except json.JSONDecodeError as e:
-        print(f"Error: Invalid JSON in terraform/gateway_output.json: {e}")
+    if not cognito_client_id:
+        print("Error: Cognito Client ID not configured. Set COGNITO_CLIENT_ID environment variable or ensure terraform/gateway_output.json exists.")
+        sys.exit(1)
+    if not cognito_domain:
+        print("Error: Cognito Domain not configured. Set COGNITO_DOMAIN environment variable or ensure terraform/gateway_output.json exists.")
+        sys.exit(1)
+    if not cognito_client_secret:
+        print("Error: COGNITO_CLIENT_SECRET environment variable not set.")
         sys.exit(1)
     
     print(f"Deploying agent with:")

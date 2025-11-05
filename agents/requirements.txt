@@ -8,3 +8,5 @@ strands-agents[otel]
 strands-agents-tools
 mcp
 langfuse
+flask
+flask-cors

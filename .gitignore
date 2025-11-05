@@ -41,3 +41,16 @@ terraform/.terraform.lock.hcl
 *_TEMP.md
 utils/api_test.py
 inventory_health_report.json
+
+# Build artifacts
+lambda_functions/*.zip
+terraform/tfplan
+terraform/tfplan_*
+
+# Debug and test scripts
+utils/debug_*.py
+utils/test_direct_*.py
+utils/test_invoice_*.py
+utils/test_new_*.py
+utils/test_po_*.py
+utils/verify_agent_*.py

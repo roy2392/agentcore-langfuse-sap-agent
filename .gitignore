@@ -18,7 +18,25 @@ env/
 factuality_results.json
 experimentation/hpo_config_tmp.json
 
+# Terraform generated outputs
+terraform/gateway_output.json
+terraform/target_output.json
+terraform/target_sap_tools_output.json
+terraform/*.tfstate
+terraform/*.tfstate.backup
+terraform/.terraform/
+terraform/.terraform.lock.hcl
+
 # Log files
 *.log
-.vercel
+
+# Vercel deployment
+.vercel/
+
+# Bedrock agent config (generated)
 .bedrock_agentcore.yaml
+
+# Temporary and test files
+*_tmp.json
+*_TEMP.md
+utils/api_test.py

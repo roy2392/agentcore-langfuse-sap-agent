@@ -254,9 +254,22 @@ The MCP Gateway is deployed using Terraform and configured with:
 
 #### SAP OData Service Integration
 
-The Lambda function integrates with the SAP demo system using:
+The Lambda functions integrate with SAP systems to provide **comprehensive inventory management**:
 
-- **Service**: `C_PURCHASEORDER_FS_SRV` (SAP Fiori service for purchase orders)
+**Services:**
+- `C_PURCHASEORDER_FS_SRV` - Purchase order management
+- `API_MATERIAL_STOCK_SRV` - Material stock levels and inventory
+- `C_GOODSRECEIPT_SRV` - Goods receipt tracking (optional)
+
+**Capabilities:**
+- ✅ Real-time inventory stock levels
+- ✅ Low stock alerts and recommendations
+- ✅ Purchase order tracking (all orders, not just specific POs)
+- ✅ Orders in transit and pending deliveries
+- ✅ Supplier performance analysis
+- ✅ Inventory health monitoring
+
+For detailed inventory management features, see [Inventory Management Guide](docs/INVENTORY_MANAGEMENT.md)
 - **Authentication**: SAP credentials stored in AWS Secrets Manager
 - **Data**: Real purchase order data including:
   - PO headers (supplier, dates, values)

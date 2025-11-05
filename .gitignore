@@ -40,3 +40,4 @@ terraform/.terraform.lock.hcl
 *_tmp.json
 *_TEMP.md
 utils/api_test.py
+inventory_health_report.json

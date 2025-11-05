@@ -81,14 +81,95 @@
               }
             },
             {
+              "name": "get_material_in_transit",
+              "description": "INVENTORY-FOCUSED: Get materials with quantities in transit (not yet delivered). Returns material-level view showing total in-transit quantity per material. Use when user asks in Hebrew 'מה יש בדרך', 'כמה יש בהעברה', 'מלאי בדרך' or English 'what's in transit', 'materials being shipped', 'on-order quantity for material X'. This is the PRIMARY tool for checking in-transit inventory.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "material_number": {
+                    "type": "string",
+                    "description": "Specific material to check in-transit quantity (optional - if not provided, returns all materials with in-transit quantities)"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of PO items to scan (default 200)"
+                  }
+                }
+              }
+            },
+            {
               "name": "get_orders_in_transit",
-              "description": "Get purchase orders that are in transit or being delivered. Use this when user asks about 'orders in shipping', 'orders being delivered', 'pending deliveries', etc.",
+              "description": "Get purchase orders that are in transit or being delivered (ORDER-FOCUSED view). Use this when user specifically asks about purchase orders, not materials. For material-focused inventory questions, use get_material_in_transit instead.",
               "inputSchema": {
                 "type": "object",
                 "properties": {
                   "limit": {
                     "type": "number",
                     "description": "Maximum number of orders to return (default 20)"
+                  }
+                }
+              }
+            },
+            {
+              "name": "get_goods_receipts",
+              "description": "Get goods receipt information from Material Documents. Shows what materials have been received against purchase orders. Use when user asks about 'what was received', 'goods receipts', 'material deliveries'.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "po_number": {
+                    "type": "string",
+                    "description": "Filter by specific purchase order number"
+                  },
+                  "material_number": {
+                    "type": "string",
+                    "description": "Filter by material number"
+                  },
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of records to return (default 50)"
+                  }
+                }
+              }
+            },
+            {
+              "name": "get_open_purchase_orders",
+              "description": "Get purchase orders that are potentially still open (not fully received). Use when user asks in Hebrew 'מה פתוח בהזמנות' or English 'what orders are open', 'which orders are pending', 'unreceived orders'.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of orders to return (default 50)"
+                  }
+                }
+              }
+            },
+            {
+              "name": "get_inventory_with_open_orders",
+              "description": "Cross-reference materials that have both current stock AND open purchase orders. Use when user asks in Hebrew 'מה יש לו מלאי שיש בהזמנת רכש פתוחה' or English 'what has stock with open orders', 'materials with stock and pending orders'.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "threshold": {
+                    "type": "number",
+                    "description": "Minimum stock threshold to consider (default 10)"
+                  }
+                }
+              }
+            },
+            {
+              "name": "get_orders_awaiting_invoice_or_delivery",
+              "description": "Get purchase order items awaiting invoice or delivery. Shows items not fully delivered (IsCompletelyDelivered=false) or not fully invoiced (IsFinallyInvoiced=false). Use when user asks in Hebrew 'איזה הזמנות לא התקבלה חשבונית' (which orders haven't received invoice), 'מה לא התקבל' (what hasn't been received), or English 'orders without invoice', 'orders not delivered', 'pending invoices', 'incomplete deliveries'.",
+              "inputSchema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "number",
+                    "description": "Maximum number of items to return (default 100)"
+                  },
+                  "filter_type": {
+                    "type": "string",
+                    "description": "Filter by status: 'not_delivered' (only items not delivered), 'not_invoiced' (only items not invoiced), or 'all' (items missing either or both) - default 'all'"
                   }
                 }
               }

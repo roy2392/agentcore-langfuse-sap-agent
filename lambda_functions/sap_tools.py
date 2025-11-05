@@ -301,8 +301,8 @@ def get_material_stock(material_number=None, plant=None, low_stock_only=False, t
         threshold: Stock threshold for low_stock_only filter
     """
     select = [
-        "Material", "Plant", "StorageLocation", "MaterialDescription",
-        "AvailableQuantity", "QuantityOnHand", "BaseUnit"
+        "Material", "Plant", "StorageLocation", "MaterialBaseUnit",
+        "MatlWrhsStkQtyInMatlBaseUnit", "InventoryStockType"
     ]
 
     filters = []
@@ -311,18 +311,17 @@ def get_material_stock(material_number=None, plant=None, low_stock_only=False, t
     if plant:
         filters.append(f"Plant eq '{plant}'")
     if low_stock_only:
-        filters.append(f"AvailableQuantity lt {threshold}")
+        filters.append(f"MatlWrhsStkQtyInMatlBaseUnit lt {threshold}")
 
     filter_str = " and ".join(filters) if filters else None
 
-    # Note: This endpoint may not exist in all SAP systems
-    # Adjust the path based on your SAP system
+    # Use A_MatlStkInAcctMod entity for actual stock quantities
     url = _build_url(
-        "/sap/opu/odata/sap/API_MATERIAL_STOCK_SRV/A_MaterialStock",
+        "/sap/opu/odata/sap/API_MATERIAL_STOCK_SRV/A_MatlStkInAcctMod",
         filters=filter_str,
         select=select,
-        orderby="AvailableQuantity asc",
-        top=50
+        orderby=None,  # Remove orderby to avoid issues
+        top=200  # Increase limit to get more materials
     )
 
     res = make_sap_request(url)
@@ -339,7 +338,23 @@ def get_material_stock(material_number=None, plant=None, low_stock_only=False, t
     if "parse_error" in parsed:
         return {"status": "error", "message": "Failed to parse response", "details": parsed}
 
-    stock_items = [_clean_entry(e) for e in parsed.get("entries", [])]
+    raw_items = [_clean_entry(e) for e in parsed.get("entries", [])]
+
+    # Normalize field names and filter out empty materials
+    stock_items = []
+    for item in raw_items:
+        material = item.get("Material", "").strip()
+        if not material:  # Skip entries with no material
+            continue
+
+        stock_items.append({
+            "Material": material,
+            "Plant": item.get("Plant"),
+            "StorageLocation": item.get("StorageLocation"),
+            "AvailableQuantity": float(item.get("MatlWrhsStkQtyInMatlBaseUnit", 0)),
+            "BaseUnit": item.get("MaterialBaseUnit"),
+            "StockType": item.get("InventoryStockType")
+        })
 
     # Calculate totals
     total_available = sum(item.get("AvailableQuantity", 0) for item in stock_items)
@@ -358,7 +373,87 @@ def get_material_stock(material_number=None, plant=None, low_stock_only=False, t
     }
 
 # ============================================================================
-# TOOL 4: Get Orders in Transit/Delivery
+# TOOL 4: Get Material In-Transit Quantities (INVENTORY-FOCUSED)
+# ============================================================================
+def get_material_in_transit(material_number=None, limit=200):
+    """
+    Get materials with quantities in transit (not yet delivered)
+    INVENTORY-FOCUSED: Returns material-level view of in-transit quantities
+
+    Args:
+        material_number: Specific material to check (optional)
+        limit: Maximum number of PO items to check (default 200)
+
+    Returns material-centric data showing:
+    - Material number
+    - Total quantity in transit
+    - Associated purchase orders (if needed)
+    """
+    # Query WITHOUT $select to avoid 404 errors with delivery status fields
+    url = _build_url(
+        "/sap/opu/odata/sap/C_PURCHASEORDER_FS_SRV/I_PurchaseOrderItem",
+        filters=None,
+        select=None,  # Must be None to access IsCompletelyDelivered field
+        orderby="PurchaseOrder desc",
+        top=limit
+    )
+
+    res = make_sap_request(url)
+    if res["status"] != "success":
+        return res
+
+    parsed = parse_json_entries(res["data"])
+    if "parse_error" in parsed:
+        return {"status": "error", "message": "Failed to parse response", "details": parsed}
+
+    all_items = [_clean_entry(e) for e in parsed.get("entries", [])]
+
+    # Filter for NOT completely delivered items
+    in_transit_items = [
+        item for item in all_items
+        if item.get('IsCompletelyDelivered') == False
+    ]
+
+    # Filter by material if specified
+    if material_number:
+        material_number = material_number.strip().lstrip('0')
+        in_transit_items = [
+            item for item in in_transit_items
+            if item.get('Material', '').strip().lstrip('0') == material_number
+        ]
+
+    # Group by MATERIAL (inventory-focused)
+    by_material = {}
+    for item in in_transit_items:
+        mat = item.get('Material')
+        if mat not in by_material:
+            by_material[mat] = {
+                'material': mat,
+                'total_in_transit_qty': 0,
+                'unit': item.get('PurchaseOrderQuantityUnit'),
+                'related_orders': []
+            }
+
+        qty = float(item.get('OrderQuantity', 0))
+        by_material[mat]['total_in_transit_qty'] += qty
+        by_material[mat]['related_orders'].append({
+            'purchase_order': item.get('PurchaseOrder'),
+            'item': item.get('PurchaseOrderItem'),
+            'quantity': qty,
+            'is_invoiced': item.get('IsFinallyInvoiced')
+        })
+
+    materials_in_transit = list(by_material.values())
+
+    return {
+        "status": "success",
+        "materials_in_transit": materials_in_transit,
+        "total_materials": len(materials_in_transit),
+        "note": "Showing materials with quantities in transit (IsCompletelyDelivered = False). This is inventory-focused view."
+    }
+
+# ============================================================================
+# TOOL 5: Get Orders in Transit/Delivery (kept for compatibility)
 # ============================================================================
 def get_orders_in_transit(limit=20):
     """
@@ -405,6 +500,359 @@ def get_orders_in_transit(limit=20):
             "to": datetime.now().strftime("%Y-%m-%d")
         },
         "note": "These are recent purchase orders. For actual delivery status, check goods receipt data."
+    }
+
+# ============================================================================
+# TOOL 5: Get Goods Receipts (Material Documents)
+# ============================================================================
+def get_goods_receipts(po_number=None, material_number=None, limit=50):
+    """
+    Get goods receipt information from Material Documents API
+    Shows what has been received against purchase orders
+
+    Args:
+        po_number: Filter by specific purchase order
+        material_number: Filter by material number
+        limit: Maximum number of records to return
+    """
+    select = [
+        "MaterialDocument", "MaterialDocumentYear", "MaterialDocumentItem",
+        "Material", "Plant", "StorageLocation", "GoodsMovementType",
+        "QuantityInEntryUnit", "EntryUnit", "PurchaseOrder", "PurchaseOrderItem",
+        "PostingDate", "DocumentDate", "MaterialDocumentHeaderText"
+    ]
+
+    filters = []
+    # Filter for goods receipts (movement type 101)
+    filters.append("GoodsMovementType eq '101'")
+
+    if po_number:
+        filters.append(f"PurchaseOrder eq '{po_number}'")
+    if material_number:
+        filters.append(f"Material eq '{material_number}'")
+
+    filter_str = " and ".join(filters) if filters else None
+
+    # Try both possible service names
+    # Technical name from SAP docs: API_MATERIAL_DOCUMENT
+    # Common variation: API_MATERIAL_DOCUMENT_SRV
+    url = _build_url(
+        "/sap/opu/odata/sap/API_MATERIAL_DOCUMENT_SRV/A_MaterialDocumentItem",
+        filters=filter_str,
+        select=select,
+        orderby=None,  # Remove orderby to avoid potential issues
+        top=limit
+    )
+
+    res = make_sap_request(url)
+    if res["status"] != "success":
+        return {
+            "status": "partial",
+            "message": "Material Document API may not be available in this SAP system",
+            "goods_receipts": [],
+            "note": "Contact SAP administrator to enable Material Document APIs"
+        }
+
+    parsed = parse_json_entries(res["data"])
+    if "parse_error" in parsed:
+        return {"status": "error", "message": "Failed to parse response", "details": parsed}
+
+    receipts = [_clean_entry(e) for e in parsed.get("entries", [])]
+
+    # Calculate summary
+    total_received = sum(item.get("QuantityInEntryUnit", 0) for item in receipts)
+
+    return {
+        "status": "success",
+        "goods_receipts": receipts,
+        "total_records": len(receipts),
+        "total_quantity_received": total_received,
+        "filters_applied": {
+            "po_number": po_number,
+            "material_number": material_number,
+            "limit": limit
+        }
+    }
+
+# ============================================================================
+# TOOL 6: Get Open Purchase Orders (simplified for demo system)
+# ============================================================================
+def get_open_purchase_orders(limit=50):
+    """
+    Get recent purchase orders (potentially open orders)
+
+    NOTE: Without Material Document API, we return recent POs as they are likely
+    still open. In production with Material Document API, this would compare
+    ordered vs received quantities.
+
+    Args:
+        limit: Maximum number of orders to return
+    """
+    # Get recent purchase orders (these are likely still open)
+    po_result = list_purchase_orders(limit=limit)
+
+    if po_result.get("status") != "success":
+        return {
+            "status": "error",
+            "message": "Could not retrieve purchase orders",
+            "details": po_result.get("message"),
+            "open_purchase_orders": [],
+            "total_open_orders": 0
+        }
+
+    po_list = po_result.get("purchase_orders", [])
+
+    if not po_list:
+        return {
+            "status": "success",
+            "open_purchase_orders": [],
+            "total_open_orders": 0,
+            "note": "No purchase orders found"
+        }
+
+    # Format as "open" orders (without goods receipt comparison since API not available)
+    open_orders = []
+    for po in po_list:
+        open_orders.append({
+            "purchase_order": po.get("PurchaseOrder"),
+            "supplier": po.get("Supplier"),
+            "order_date": po.get("PurchaseOrderDate"),
+            "purchasing_org": po.get("PurchasingOrganization"),
+            "currency": po.get("DocumentCurrency"),
+            "status": "Potentially Open (goods receipt data not available)"
+        })
+
+    return {
+        "status": "success",
+        "open_purchase_orders": open_orders,
+        "total_open_orders": len(open_orders),
+        "note": "Material Document API not available. Showing recent purchase orders which are likely still open. To get actual open/closed status with ordered vs received quantities, enable API_MATERIAL_DOCUMENT_SRV in SAP system."
+    }
+
+# ============================================================================
+# TOOL 7: Get Inventory with Open Orders
+# ============================================================================
+def get_inventory_with_open_orders(threshold=10):
+    """
+    Cross-reference inventory stock with open purchase orders
+    Shows materials that have stock AND have open purchase orders
+
+    Args:
+        threshold: Minimum stock threshold to consider
+    """
+    # Get stock info
+    stock_res = get_material_stock(low_stock_only=False)
+    if stock_res.get("status") != "success":
+        return {
+            "status": "partial",
+            "message": "Could not retrieve stock information",
+            "inventory_with_orders": []
+        }
+
+    stock_items = stock_res.get("stock_info", [])
+
+    # Get open orders
+    open_orders_res = get_open_purchase_orders(limit=100)
+    if open_orders_res.get("status") != "success":
+        return {
+            "status": "partial",
+            "message": "Could not retrieve open orders",
+            "inventory_with_orders": []
+        }
+
+    # Build material->orders map
+    material_orders = {}
+    for order in open_orders_res.get("open_purchase_orders", []):
+        for item in order.get("items", []):
+            material = item.get("material")
+            if material not in material_orders:
+                material_orders[material] = []
+            material_orders[material].append({
+                "purchase_order": order["purchase_order"],
+                "supplier": order["supplier"],
+                "order_date": order["order_date"],
+                "open_quantity": item["open_quantity"],
+                "unit": item["unit"]
+            })
+
+    # Cross-reference: materials with stock AND open orders
+    inventory_with_orders = []
+    for stock_item in stock_items:
+        material = stock_item.get("Material")
+        available_qty = stock_item.get("AvailableQuantity", 0)
+
+        if material in material_orders:
+            open_orders = material_orders[material]
+            total_open_qty = sum(o["open_quantity"] for o in open_orders)
+
+            inventory_with_orders.append({
+                "material": material,
+                "description": stock_item.get("MaterialDescription"),
+                "plant": stock_item.get("Plant"),
+                "storage_location": stock_item.get("StorageLocation"),
+                "available_quantity": available_qty,
+                "unit": stock_item.get("BaseUnit"),
+                "total_open_quantity": total_open_qty,
+                "open_orders_count": len(open_orders),
+                "open_orders": open_orders
+            })
+
+    return {
+        "status": "success",
+        "inventory_with_open_orders": inventory_with_orders,
+        "total_materials": len(inventory_with_orders),
+        "note": "These materials have both current stock and pending purchase orders"
+    }
+
+# ============================================================================
+# TOOL 8: Get Orders Awaiting Invoice or Delivery
+# ============================================================================
+def get_orders_awaiting_invoice_or_delivery(limit=100, filter_type="all"):
+    """
+    Get purchase order items that are not fully delivered or not invoiced
+    Returns BOTH total counts across entire dataset AND detailed items (up to limit)
+
+    Args:
+        limit: Maximum number of items to return
+        filter_type: Filter by status - "not_delivered", "not_invoiced", or "all"
+    """
+    # Keep field list short to avoid URL length issues (SAP has ~290 char limit max)
+    select = [
+        "PurchaseOrder", "PurchaseOrderItem", "Material",
+        "OrderQuantity", "PurchaseOrderQuantityUnit",
+        "IsCompletelyDelivered", "IsFinallyInvoiced"
+    ]
+
+    # Build filter based on delivery and invoice status
+    # Note: For "all" we just get recent items and filter in code since SAP OData
+    # has limited support for complex OR filters
+    filters = []
+    if filter_type == "not_delivered":
+        filters.append("IsCompletelyDelivered eq false")
+    elif filter_type == "not_invoiced":
+        filters.append("IsFinallyInvoiced eq false")
+    # For "all" type, don't add filter - we'll filter in code
+
+    filter_str = " and ".join(filters) if filters else None
+
+    # FIRST: Fetch a larger dataset (300 items) with minimal fields to get full context
+    # We need this to accurately report "X out of Y total" and identify patterns
+    # NOTE: Keep fields minimal to avoid SAP URL length limit (~250 chars max)
+    # SAP rejects requests with Supplier field at top=500, so using top=300 and 3 fields only
+    analysis_url = _build_url(
+        "/sap/opu/odata/sap/C_PURCHASEORDER_FS_SRV/I_PurchaseOrderItem",
+        filters=None,  # Get all items, filter in code
+        select=["PurchaseOrder", "IsCompletelyDelivered", "IsFinallyInvoiced"],
+        orderby="PurchaseOrder desc",
+        top=300  # Max that works reliably with SAP URL limits
+    )
+
+    analysis_res = make_sap_request(analysis_url, timeout=60, retries=2)
+    total_items_in_system = 0
+    all_items_sample = []
+
+    if analysis_res["status"] == "success":
+        parsed_analysis = parse_json_entries(analysis_res["data"])
+        all_items_sample = [_clean_entry(e) for e in parsed_analysis.get("entries", [])]
+        total_items_in_system = len(all_items_sample)
+        # If we got 300, there may be more - note this in response
+        if total_items_in_system == 300:
+            total_items_in_system = "300+"  # Indicate there are more
+
+    # SECOND: Get detailed data for the items we'll show to user (with full fields)
+    url = _build_url(
+        "/sap/opu/odata/sap/C_PURCHASEORDER_FS_SRV/I_PurchaseOrderItem",
+        filters=filter_str,
+        select=select,
+        orderby="PurchaseOrder desc",
+        top=limit
+    )
+
+    res = make_sap_request(url, timeout=45, retries=2)
+    if res["status"] != "success":
+        return {
+            "status": "error",
+            "message": "Could not retrieve purchase order items",
+            "details": res.get("message")
+        }
+
+    parsed = parse_json_entries(res["data"])
+    if "parse_error" in parsed:
+        return {
+            "status": "error",
+            "message": "Failed to parse response",
+            "details": parsed
+        }
+
+    items = [_clean_entry(e) for e in parsed.get("entries", [])]
+
+    # Analyze the FULL sample (300 items) to get accurate counts and patterns
+    total_not_delivered = 0
+    total_not_invoiced = 0
+    total_both_pending = 0
+    po_numbers_with_issues = set()
+
+    for item in all_items_sample:
+        is_delivered = item.get("IsCompletelyDelivered") in [True, "true", "X"]
+        is_invoiced = item.get("IsFinallyInvoiced") in [True, "true", "X"]
+        po_number = item.get("PurchaseOrder", "")
+
+        if not is_delivered and not is_invoiced:
+            total_both_pending += 1
+            po_numbers_with_issues.add(po_number)
+        elif not is_delivered:
+            total_not_delivered += 1
+        elif not is_invoiced:
+            total_not_invoiced += 1
+
+    # Categorize detailed items to show user (from limited query)
+    not_delivered = []
+    not_invoiced = []
+    both_pending = []
+
+    for item in items:
+        is_delivered = item.get("IsCompletelyDelivered") in [True, "true", "X"]
+        is_invoiced = item.get("IsFinallyInvoiced") in [True, "true", "X"]
+
+        item_data = {
+            "purchase_order": item.get("PurchaseOrder"),
+            "item": item.get("PurchaseOrderItem"),
+            "material": item.get("Material"),
+            "quantity": item.get("OrderQuantity"),
+            "unit": item.get("PurchaseOrderQuantityUnit"),
+            "is_delivered": is_delivered,
+            "is_invoiced": is_invoiced
+        }
+
+        if not is_delivered and not is_invoiced:
+            both_pending.append(item_data)
+        elif not is_delivered:
+            not_delivered.append(item_data)
+        elif not is_invoiced:
+            not_invoiced.append(item_data)
+
+    # Pattern analysis from full sample
+    patterns = {
+        "unique_po_numbers": sorted(list(po_numbers_with_issues))[:15],  # Show first 15 POs
+        "total_unique_pos": len(po_numbers_with_issues),
+        "percentage_with_issues": round(total_both_pending/len(all_items_sample)*100 if len(all_items_sample) > 0 else 0, 1)
+    }
+
+    return {
+        "status": "success",
+        "total_items_in_system": total_items_in_system,
+        "items_analyzed_for_detailed_view": len(items),
+        "items_awaiting_delivery": not_delivered,
+        "items_awaiting_invoice": not_invoiced,
+        "items_awaiting_both": both_pending,
+        "summary": {
+            "total_items_in_system": total_items_in_system,
+            "total_not_delivered": total_not_delivered,
+            "total_not_invoiced": total_not_invoiced,
+            "total_both_pending": total_both_pending,
+            "patterns": patterns
+        },
+        "note": f"Analyzed {len(all_items_sample)} items from the system. Found {total_both_pending} items ({round(total_both_pending/len(all_items_sample)*100 if len(all_items_sample) > 0 else 0, 1)}%) with neither delivery nor invoice."
     }
 
 # ============================================================================
@@ -466,9 +914,33 @@ def lambda_handler(event, context):
                 low_stock_only=params.get("low_stock_only", False),
                 threshold=int(params.get("threshold", 10))
             )
+        elif tool_name == "get_material_in_transit":
+            result = get_material_in_transit(
+                material_number=params.get("material_number"),
+                limit=int(params.get("limit", 200))
+            )
         elif tool_name == "get_orders_in_transit":
             result = get_orders_in_transit(
                 limit=int(params.get("limit", 20))
+            )
+        elif tool_name == "get_goods_receipts":
+            result = get_goods_receipts(
+                po_number=params.get("po_number"),
+                material_number=params.get("material_number"),
+                limit=int(params.get("limit", 50))
+            )
+        elif tool_name == "get_open_purchase_orders":
+            result = get_open_purchase_orders(
+                limit=int(params.get("limit", 50))
+            )
+        elif tool_name == "get_inventory_with_open_orders":
+            result = get_inventory_with_open_orders(
+                threshold=int(params.get("threshold", 10))
+            )
+        elif tool_name == "get_orders_awaiting_invoice_or_delivery":
+            result = get_orders_awaiting_invoice_or_delivery(
+                limit=int(params.get("limit", 100)),
+                filter_type=params.get("filter_type", "all")
             )
         else:
             result = {
@@ -478,7 +950,12 @@ def lambda_handler(event, context):
                     "list_purchase_orders",
                     "search_purchase_orders",
                     "get_material_stock",
-                    "get_orders_in_transit"
+                    "get_material_in_transit",
+                    "get_orders_in_transit",
+                    "get_goods_receipts",
+                    "get_open_purchase_orders",
+                    "get_inventory_with_open_orders",
+                    "get_orders_awaiting_invoice_or_delivery"
                 ]
             }
 

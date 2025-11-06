@@ -32,8 +32,17 @@ from sap_tools import (
     search_purchase_orders,
     get_material_stock,
     get_orders_in_transit,
-    _missing_env
+    get_goods_receipts,
+    get_open_purchase_orders,
+    get_inventory_with_open_orders
 )
+
+# Check for missing environment variables
+def _missing_env():
+    """Check for missing required environment variables"""
+    required = ["SAP_HOST", "SAP_USER", "SAP_PASSWORD"]
+    missing = [var for var in required if not os.getenv(var)]
+    return missing
 
 
 class InventoryHealthCheck:
@@ -273,6 +282,150 @@ class InventoryHealthCheck:
                 "error": str(e)
             }
 
+    def check_goods_receipts(self, limit=20):
+        """Check goods receipts from Material Documents API"""
+        print(f"\n{'='*80}")
+        print("CHECK 6: Goods Receipts (Material Documents)")
+        print(f"{'='*80}")
+
+        try:
+            result = get_goods_receipts(limit=limit)
+
+            if result.get("status") == "success":
+                receipts = result.get("goods_receipts", [])
+                total_qty = result.get("total_quantity_received", 0)
+
+                print(f"✅ Found {len(receipts)} goods receipts")
+                print(f"📦 Total quantity received: {total_qty}")
+
+                if receipts:
+                    print("\n📥 Recent Goods Receipts:")
+                    for gr in receipts[:10]:  # Show first 10
+                        material = gr.get("Material", "N/A")
+                        po = gr.get("PurchaseOrder", "N/A")
+                        qty = gr.get("QuantityInEntryUnit", 0)
+                        date = gr.get("PostingDate", "N/A")
+                        print(f"  Material: {material} | PO: {po} | Qty: {qty} | Date: {date}")
+
+                self.results["checks"]["goods_receipts"] = {
+                    "status": "pass",
+                    "receipts_count": len(receipts),
+                    "total_quantity": total_qty
+                }
+            else:
+                print(f"⚠️  Note: {result.get('message')}")
+                self.results["checks"]["goods_receipts"] = {
+                    "status": "partial",
+                    "message": result.get("message")
+                }
+
+        except Exception as e:
+            print(f"❌ Exception: {e}")
+            self.results["checks"]["goods_receipts"] = {
+                "status": "error",
+                "error": str(e)
+            }
+
+    def check_open_purchase_orders(self, limit=30):
+        """Check open purchase orders (ordered > received)"""
+        print(f"\n{'='*80}")
+        print("CHECK 7: Open Purchase Orders (Ordered vs Received)")
+        print(f"{'='*80}")
+
+        try:
+            result = get_open_purchase_orders(limit=limit)
+
+            if result.get("status") == "success":
+                open_orders = result.get("open_purchase_orders", [])
+                total_open_items = result.get("total_open_items", 0)
+
+                print(f"✅ Found {len(open_orders)} open purchase orders")
+                print(f"📋 Total open items: {total_open_items}")
+
+                if open_orders:
+                    print("\n🔓 Open Purchase Orders:")
+                    for order in open_orders[:10]:  # Show first 10
+                        po = order.get("purchase_order", "N/A")
+                        supplier = order.get("supplier", "N/A")
+                        date = order.get("order_date", "N/A")
+                        items_count = order.get("total_open_items", 0)
+                        print(f"  PO: {po} | Supplier: {supplier} | Date: {date} | Open Items: {items_count}")
+
+                        # Show first 3 items
+                        for item in order.get("items", [])[:3]:
+                            material = item.get("material", "N/A")
+                            ordered = item.get("ordered_quantity", 0)
+                            received = item.get("received_quantity", 0)
+                            open_qty = item.get("open_quantity", 0)
+                            print(f"    - {material}: Ordered={ordered}, Received={received}, Open={open_qty}")
+                else:
+                    print("✓ No open purchase orders found (all orders fully received)")
+
+                self.results["checks"]["open_orders"] = {
+                    "status": "pass",
+                    "open_orders_count": len(open_orders),
+                    "total_open_items": total_open_items
+                }
+            else:
+                print(f"❌ Failed: {result.get('message')}")
+                self.results["checks"]["open_orders"] = {
+                    "status": "fail",
+                    "error": result.get("message")
+                }
+
+        except Exception as e:
+            print(f"❌ Exception: {e}")
+            self.results["checks"]["open_orders"] = {
+                "status": "error",
+                "error": str(e)
+            }
+
+    def check_inventory_with_open_orders(self):
+        """Check materials that have stock AND open purchase orders"""
+        print(f"\n{'='*80}")
+        print("CHECK 8: Inventory with Open Orders (Cross-Reference)")
+        print(f"{'='*80}")
+
+        try:
+            result = get_inventory_with_open_orders()
+
+            if result.get("status") == "success":
+                inventory_items = result.get("inventory_with_open_orders", [])
+
+                print(f"✅ Found {len(inventory_items)} materials with both stock and open orders")
+
+                if inventory_items:
+                    print("\n📦🔓 Materials with Stock AND Open Orders:")
+                    for item in inventory_items[:10]:  # Show first 10
+                        material = item.get("material", "N/A")
+                        desc = item.get("description", "No description")
+                        available = item.get("available_quantity", 0)
+                        open_qty = item.get("total_open_quantity", 0)
+                        orders_count = item.get("open_orders_count", 0)
+
+                        print(f"  {material}: {desc[:40]}")
+                        print(f"    Available Stock: {available}, Incoming: {open_qty} ({orders_count} orders)")
+                else:
+                    print("ℹ️  No materials found with both stock and open orders")
+
+                self.results["checks"]["inventory_with_open_orders"] = {
+                    "status": "pass",
+                    "materials_count": len(inventory_items)
+                }
+            else:
+                print(f"⚠️  Note: {result.get('message')}")
+                self.results["checks"]["inventory_with_open_orders"] = {
+                    "status": "partial",
+                    "message": result.get("message")
+                }
+
+        except Exception as e:
+            print(f"❌ Exception: {e}")
+            self.results["checks"]["inventory_with_open_orders"] = {
+                "status": "error",
+                "error": str(e)
+            }
+
     def generate_inventory_recommendations(self):
         """Generate inventory management recommendations based on checks"""
         print(f"\n{'='*80}")
@@ -290,6 +443,17 @@ class InventoryHealthCheck:
                     "priority": "HIGH",
                     "category": "Stock Replenishment",
                     "message": f"⚠️  {count} materials have low stock levels. Review and create purchase requisitions."
+                })
+
+        # Open orders check
+        open_orders_check = self.results["checks"].get("open_orders", {})
+        if open_orders_check.get("status") == "pass":
+            count = open_orders_check.get("open_orders_count", 0)
+            if count > 10:
+                recommendations.append({
+                    "priority": "MEDIUM",
+                    "category": "Open Orders",
+                    "message": f"ℹ️  {count} purchase orders are still open. Follow up with suppliers for delivery status."
                 })
 
         # Recent orders trend
@@ -382,6 +546,9 @@ def main():
         checker.check_orders_in_transit()
         checker.check_supplier_orders(limit=50)
         checker.check_recent_orders_by_date(days_back=30)
+        checker.check_goods_receipts(limit=20)
+        checker.check_open_purchase_orders(limit=30)
+        checker.check_inventory_with_open_orders()
         checker.generate_inventory_recommendations()
         checker.print_summary()
 

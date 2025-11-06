@@ -91,6 +91,41 @@ English: Give me a summary of all our suppliers
 - Total spend per supplier
 - Supplier diversity metrics
 
+#### Open Purchase Orders (NEW!)
+```
+Hebrew: מה פתוח בהזמנות?
+English: What's open in orders?
+
+Hebrew: אילו הזמנות עדיין לא התקבלו?
+English: Which orders haven't been received yet?
+```
+
+**Returns:**
+- Orders with pending deliveries (ordered > received)
+- Ordered vs received quantities per item
+- Open quantity per material
+- Supplier and delivery status
+
+**How it works:**
+- Compares purchase order quantities with goods receipts
+- Identifies items where ordered quantity exceeds received quantity
+- Shows exactly what's still pending delivery
+
+#### Goods Receipts (NEW!)
+```
+Hebrew: מה התקבל לאחרונה?
+English: What was received recently?
+
+Hebrew: תראה לי תנועות קבלה של חומרים
+English: Show me material goods receipts
+```
+
+**Returns:**
+- Recent goods receipt documents
+- Received quantities per material
+- Purchase order reference
+- Receipt dates and locations
+
 #### Orders In Transit
 ```
 Hebrew: אילו הזמנות בדרך?
@@ -125,6 +160,30 @@ English: Check our inventory health
 - Supplier diversity and concentration
 - Order fulfillment patterns
 - Inventory turnover metrics
+- Open orders vs received quantities
+
+#### Inventory with Open Orders (NEW!)
+```
+Hebrew: מה יש לו מלאי שיש בהזמנת רכש פתוחה?
+English: What has stock that also has open purchase orders?
+
+Hebrew: תראה לי חומרים עם מלאי והזמנות פתוחות
+English: Show me materials with stock and open orders
+```
+
+**Returns:**
+- Materials that have BOTH:
+  - Current stock in warehouse
+  - Pending purchase orders
+- Available quantities
+- Incoming quantities from open orders
+- Order details and suppliers
+
+**Use Cases:**
+- Identify potential overstocking before orders arrive
+- Plan warehouse space for incoming deliveries
+- Adjust order quantities if needed
+- Coordinate with procurement team
 
 #### Reorder Recommendations
 ```
@@ -153,7 +212,7 @@ Run comprehensive inventory analysis:
 python utils/test_sap_inventory.py
 ```
 
-**This script performs:**
+**This script performs 8 comprehensive checks:**
 
 1. **Low Stock Materials Check**
    - Identifies materials below threshold
@@ -180,15 +239,43 @@ python utils/test_sap_inventory.py
    - Daily order patterns
    - Procurement activity trends
 
-6. **Inventory Recommendations**
-   - Automated analysis of health checks
-   - Prioritized action items
-   - Stock replenishment suggestions
+6. **Goods Receipts Check (NEW!)**
+   - Recent material receipts
+   - Quantities received per material
+   - Receipt dates and PO references
+
+7. **Open Purchase Orders (NEW!)**
+   - Orders with pending deliveries
+   - Ordered vs received comparison
+   - Open quantities per material
+
+8. **Inventory with Open Orders (NEW!)**
+   - Materials with both stock and pending orders
+   - Cross-reference analysis
+   - Potential overstocking alerts
 
 **Output:**
 - Console summary with visual indicators (✅ ❌ ⚠️)
 - Detailed JSON report: `inventory_health_report.json`
 - Recommendations with priority levels
+
+### Quick Test for New Tools
+
+Test the three new Material Document API tools:
+
+```bash
+python utils/test_new_tools.py
+```
+
+**This focused test covers:**
+1. **Goods Receipts** - Get recent material receipts
+2. **Open Purchase Orders** - Find orders where ordered > received
+3. **Inventory with Open Orders** - Cross-reference stock with open POs
+
+**Answers the Hebrew Questions:**
+- כמה במלאי? (How much in stock?) → `get_material_stock`
+- מה פתוח בהזמנות? (What's open in orders?) → `get_open_purchase_orders`
+- מה יש לו מלאי שיש בהזמנת רכש פתוחה? → `get_inventory_with_open_orders`
 
 ---
 
@@ -228,6 +315,30 @@ The agent integrates with multiple SAP OData APIs:
 - `OrderQuantity` - Ordered quantity
 - `NetAmount` - Net value
 - `PurchaseOrderItemText` - Item description
+
+### Material Document Service (NEW!)
+- **Service:** `API_MATERIAL_DOCUMENT_SRV`
+- **Entity:** `A_MaterialDocumentItem`
+- **Purpose:** Goods receipts and material movements
+
+**Key Fields:**
+- `MaterialDocument` - Document number
+- `MaterialDocumentYear` - Fiscal year
+- `MaterialDocumentItem` - Item number
+- `Material` - Material number
+- `GoodsMovementType` - Movement type (101 = goods receipt)
+- `QuantityInEntryUnit` - Received quantity
+- `PurchaseOrder` - Reference PO number
+- `PurchaseOrderItem` - Reference PO item
+- `PostingDate` - Receipt date
+- `Plant` - Plant code
+- `StorageLocation` - Storage location
+
+**How We Use It:**
+1. **Track Goods Receipts:** Query movement type 101 to see what was received
+2. **Calculate Open Orders:** Compare PO ordered quantity with total received quantity
+3. **Identify Pending Deliveries:** Find items where ordered > received
+4. **Cross-Reference:** Match materials in stock with materials in open orders
 
 ---
 

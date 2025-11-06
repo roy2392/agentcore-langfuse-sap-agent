@@ -39,7 +39,6 @@ terraform/.terraform.lock.hcl
 # Temporary and test files
 *_tmp.json
 *_TEMP.md
-utils/api_test.py
 inventory_health_report.json
 
 # Build artifacts
@@ -49,8 +48,4 @@ terraform/tfplan_*
 
 # Debug and test scripts
 utils/debug_*.py
-utils/test_direct_*.py
-utils/test_invoice_*.py
-utils/test_new_*.py
-utils/test_po_*.py
 utils/verify_agent_*.py

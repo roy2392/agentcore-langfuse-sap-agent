@@ -82,7 +82,7 @@ system_prompt = os.getenv("SYSTEM_PROMPT", "אתה סוכן מומחה בניה�
 app = BedrockAgentCoreApp()
 
 @app.entrypoint
-def strands_agent_bedrock(payload):
+async def strands_agent_bedrock(payload):
     """
     Invoke the agent with a payload
     Agent uses tools from AgentCore Gateway (NOT embedded tools)
@@ -120,12 +120,10 @@ def strands_agent_bedrock(payload):
     # Use Langfuse telemetry if available
     if _langfuse_client:
         with _langfuse_client.start_as_current_observation(name='strands-agent', trace_context={"trace_id": trace_id, "parent_observation_id": parent_obs_id}):
-            response_stream = agent.stream(user_input)
-            for chunk in response_stream:
+            async for chunk in agent.stream_async(user_input):
                 yield chunk
     else:
-        response_stream = agent.stream(user_input)
-        for chunk in response_stream:
+        async for chunk in agent.stream_async(user_input):
             yield chunk
 
 if __name__ == "__main__":

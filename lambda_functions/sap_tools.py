@@ -453,32 +453,30 @@ def get_material_in_transit(material_number=None, limit=200):
     }
 
 # ============================================================================
-# TOOL 5: Get Orders in Transit/Delivery (kept for compatibility)
+# TOOL 5: Get Orders in Transit/Delivery (ORDER-FOCUSED)
 # ============================================================================
 def get_orders_in_transit(limit=20):
     """
-    Get purchase orders that are in transit/delivery
-    This checks for orders with pending deliveries
+    Get purchase orders that have items in transit (not yet completely delivered)
+    ORDER-FOCUSED: Returns order-level view with items pending delivery
 
     Args:
-        limit: Maximum number of orders to return
+        limit: Maximum number of PO items to check (default 20)
+
+    Returns order-centric data showing:
+    - Purchase order number
+    - Supplier
+    - Number of items in transit
+    - Total items
+    - List of materials pending delivery
     """
-    # Get recent POs (within last 90 days)
-    date_from = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
-
-    select = [
-        "PurchaseOrder", "Supplier", "DocumentCurrency",
-        "PurchaseOrderDate", "CreationDate", "PurchasingOrganization"
-    ]
-
-    filters = f"PurchaseOrderDate ge datetime'{date_from}T00:00:00'"
-
+    # Query items WITHOUT $select to access IsCompletelyDelivered field
     url = _build_url(
-        "/sap/opu/odata/sap/C_PURCHASEORDER_FS_SRV/I_PurchaseOrder",
-        filters=filters,
-        select=select,
-        orderby="PurchaseOrderDate desc",
-        top=limit
+        "/sap/opu/odata/sap/C_PURCHASEORDER_FS_SRV/I_PurchaseOrderItem",
+        filters=None,
+        select=None,  # Must be None to access IsCompletelyDelivered field
+        orderby="PurchaseOrder desc",
+        top=200  # Check more items to find orders with pending deliveries
     )
 
     res = make_sap_request(url)
@@ -489,17 +487,47 @@ def get_orders_in_transit(limit=20):
     if "parse_error" in parsed:
         return {"status": "error", "message": "Failed to parse response", "details": parsed}
 
-    orders = [_clean_entry(e) for e in parsed.get("entries", [])]
+    all_items = [_clean_entry(e) for e in parsed.get("entries", [])]
+
+    # Filter for NOT completely delivered items
+    in_transit_items = [
+        item for item in all_items
+        if item.get('IsCompletelyDelivered') == False
+    ]
+
+    # Group by PURCHASE ORDER (order-focused)
+    by_order = {}
+    for item in in_transit_items:
+        po = item.get('PurchaseOrder')
+        if po not in by_order:
+            by_order[po] = {
+                'purchase_order': po,
+                'supplier': item.get('Supplier'),
+                'currency': item.get('DocumentCurrency'),
+                'items_in_transit': [],
+                'total_in_transit_items': 0
+            }
+
+        by_order[po]['items_in_transit'].append({
+            'item': item.get('PurchaseOrderItem'),
+            'material': item.get('Material'),
+            'material_description': item.get('PurchaseOrderItemText'),
+            'quantity': float(item.get('OrderQuantity', 0)),
+            'unit': item.get('PurchaseOrderQuantityUnit'),
+            'is_invoiced': item.get('IsFinallyInvoiced')
+        })
+        by_order[po]['total_in_transit_items'] += 1
+
+    orders_in_transit = list(by_order.values())
+
+    # Limit the number of orders returned
+    orders_in_transit = orders_in_transit[:limit]
 
     return {
         "status": "success",
-        "orders_in_transit": orders,
-        "total_count": len(orders),
-        "date_range": {
-            "from": date_from,
-            "to": datetime.now().strftime("%Y-%m-%d")
-        },
-        "note": "These are recent purchase orders. For actual delivery status, check goods receipt data."
+        "orders_in_transit": orders_in_transit,
+        "total_orders": len(orders_in_transit),
+        "note": "Showing orders with items not completely delivered (IsCompletelyDelivered = False). This is order-focused view."
     }
 
 # ============================================================================

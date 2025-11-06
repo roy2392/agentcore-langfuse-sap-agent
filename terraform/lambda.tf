@@ -13,6 +13,35 @@ resource "aws_lambda_layer_version" "python_dependencies" {
   description         = "Python dependencies for SAP tools (requests, etc.)"
 }
 
+# Lambda function for sap_tools (multi-tool function)
+resource "aws_lambda_function" "sap_tools" {
+  depends_on = [aws_lambda_layer_version.python_dependencies]
+
+  filename         = data.archive_file.lambda_zip.output_path
+  function_name    = "sap-tools-${var.environment}"
+  role            = aws_iam_role.lambda_role.arn
+  handler         = "sap_tools.lambda_handler"
+  source_code_hash = data.archive_file.lambda_zip.output_base64sha256
+  runtime         = "python3.12"
+  timeout         = 60
+  memory_size     = 512
+
+  layers = [aws_lambda_layer_version.python_dependencies.arn]
+
+  environment {
+    variables = {
+      SECRET_ARN = aws_secretsmanager_secret.sap_credentials.arn
+    }
+  }
+
+  tags = {
+    Name        = "sap-tools-${var.environment}"
+    Environment = var.environment
+    ManagedBy   = "Terraform"
+    ToolCount   = "7"
+  }
+}
+
 # Lambda function for get_complete_po_data
 resource "aws_lambda_function" "get_complete_po_data" {
   depends_on = [aws_lambda_layer_version.python_dependencies]

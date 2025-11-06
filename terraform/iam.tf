@@ -37,7 +37,9 @@ resource "aws_iam_role_policy" "gateway_invoke_lambda" {
         ]
         Resource = [
           aws_lambda_function.get_complete_po_data.arn,
-          "${aws_lambda_function.get_complete_po_data.arn}:*"
+          "${aws_lambda_function.get_complete_po_data.arn}:*",
+          aws_lambda_function.sap_tools.arn,
+          "${aws_lambda_function.sap_tools.arn}:*"
         ]
       }
     ]

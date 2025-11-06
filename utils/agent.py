@@ -250,17 +250,52 @@ def invoke_agent(agent_arn, prompt, session_id=None):
         content_type = response.get("contentType", "")
         
         if "text/event-stream" in content_type:
-            # Handle streaming response
-            content = []
-            for line in response["response"].iter_lines(chunk_size=10):
-                if line:
-                    line = line.decode("utf-8")
-                    if line.startswith("data: "):
-                        line = line[6:]
-                        content.append(line)
-            
+            # Handle streaming response - extract only text from contentBlockDelta events
+            extracted_text = []
+
+            # Read the entire stream
+            stream = response["response"]
+            stream_data = stream.read().decode('utf-8', errors='replace')
+
+            # Process line by line (Server-Sent Events format)
+            for line in stream_data.split('\n'):
+                line = line.strip()
+                if not line:
+                    continue
+
+                # SSE format: lines start with "data: "
+                if line.startswith('data: '):
+                    line = line[6:]  # Remove "data: " prefix
+
+                # Skip empty lines after prefix removal
+                if not line:
+                    continue
+
+                # Skip Python debug output (starts with "{'data':")
+                if line.startswith('"{') and ("'data':" in line or '"data":' in line):
+                    continue
+
+                # Must be valid JSON starting with {
+                if not line.startswith('{'):
+                    continue
+
+                # Try to parse as JSON event
+                try:
+                    event = json.loads(line)
+
+                    # Extract text from contentBlockDelta events
+                    if isinstance(event, dict) and 'event' in event:
+                        event_data = event['event']
+                        if isinstance(event_data, dict) and 'contentBlockDelta' in event_data:
+                            delta = event_data['contentBlockDelta'].get('delta', {})
+                            if isinstance(delta, dict) and 'text' in delta:
+                                extracted_text.append(delta['text'])
+                except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+                    # Skip lines that aren't valid JSON or don't have expected structure
+                    continue
+
             return {
-                'response': "\n".join(content),
+                'response': ''.join(extracted_text),
                 'session_id': session_id,
                 'content_type': content_type
             }

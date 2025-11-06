@@ -144,6 +144,47 @@ EOF
   ]
 }
 
+# Create Gateway Target for sap_tools Lambda (multi-tool function)
+resource "null_resource" "gateway_target_sap_tools" {
+  triggers = {
+    gateway_id   = local.gateway_id
+    lambda_arn   = aws_lambda_function.sap_tools.arn
+    target_name  = "sap-tools-target"
+    config_hash  = filemd5("${path.module}/target_sap_tools_config.json")
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws bedrock-agentcore-control create-gateway-target \
+        --cli-input-json file://${path.module}/target_sap_tools_config.json \
+        --region ${var.aws_region} \
+        --output json > ${path.module}/target_sap_tools_output.json
+    EOT
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = <<-EOT
+      cd "${path.module}" || exit 0
+      if [ -f target_sap_tools_output.json ]; then
+        TARGET_ID=$(cat target_sap_tools_output.json | jq -r '.targetId' 2>/dev/null || echo "")
+        GATEWAY_ID=$(cat gateway_output.json | jq -r '.gatewayId' 2>/dev/null || echo "")
+        if [ ! -z "$TARGET_ID" ] && [ "$TARGET_ID" != "null" ]; then
+          aws bedrock-agentcore-control delete-gateway-target \
+            --gateway-identifier "$GATEWAY_ID" \
+            --target-id "$TARGET_ID" \
+            --region us-east-1 || true
+        fi
+      fi
+    EOT
+  }
+
+  depends_on = [
+    null_resource.agentcore_gateway,
+    aws_lambda_function.sap_tools
+  ]
+}
+
 # Outputs
 output "gateway_url" {
   description = "AgentCore Gateway MCP endpoint URL"
@@ -176,6 +217,7 @@ output "cognito_domain" {
 output "lambda_function_arns" {
   description = "ARNs of SAP tool Lambda functions"
   value = {
+    sap_tools            = aws_lambda_function.sap_tools.arn
     get_complete_po_data = aws_lambda_function.get_complete_po_data.arn
   }
 }

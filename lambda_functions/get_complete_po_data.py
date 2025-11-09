@@ -335,17 +335,38 @@ def get_complete_po_data(po_number):
 
 def extract_po_number_from_bedrock_event(event):
     po_number = None
-    body = event.get("requestBody", {}).get("content", {}).get("application/json", {})
-    props = body.get("properties")
-    if isinstance(props, list):
-        for prop in props:
-            if prop.get("name") == "po_number":
-                po_number = prop.get("value")
-                break
+
+    # Try MCP gateway format first (parameters as key-value pairs)
+    if "parameters" in event:
+        params = event.get("parameters", [])
+        if isinstance(params, list):
+            for param in params:
+                if isinstance(param, dict) and param.get("name") == "po_number":
+                    po_number = param.get("value")
+                    break
+        elif isinstance(params, dict):
+            po_number = params.get("po_number")
+
+    # Try Bedrock format
+    if not po_number:
+        body = event.get("requestBody", {}).get("content", {}).get("application/json", {})
+        props = body.get("properties")
+        if isinstance(props, list):
+            for prop in props:
+                if prop.get("name") == "po_number":
+                    po_number = prop.get("value")
+                    break
+
+    # Try direct parameter access
+    if not po_number:
+        po_number = event.get("po_number")
+
+    # Try inputText extraction
     if not po_number and event.get("inputText"):
         m = re.search(r"(?:PO\s*)?(\d{10})", event["inputText"], re.IGNORECASE)
         if m:
             po_number = m.group(1)
+
     return po_number
 
 
@@ -374,7 +395,27 @@ def lambda_handler(event, context):
                     "responseBody": response_body,
                 },
             }
-        po_number = extract_po_number_from_bedrock_event(event) or "4500000520"
+        po_number = extract_po_number_from_bedrock_event(event)
+
+        if not po_number:
+            # No PO number provided - return error instead of using default
+            err_body = {
+                "error": "Purchase order number is required",
+                "message": "Please provide a valid purchase order number. Example: '4500001818'",
+                "hint": "For multiple POs or delivery dates, consider using 'list_purchase_orders' or 'search_purchase_orders' tools instead."
+            }
+            response_body = {"TEXT": {"body": json.dumps(err_body)}}
+            return {
+                "messageVersion": "1.0",
+                "response": {
+                    "actionGroup": event.get("actionGroup", ""),
+                    "apiPath": event.get("apiPath", ""),
+                    "httpMethod": event.get("httpMethod", "POST"),
+                    "httpStatusCode": 400,
+                    "responseBody": response_body,
+                },
+            }
+
         result = get_complete_po_data(po_number)
         response_body = {"TEXT": {"body": json.dumps(result, indent=2)}}
         resp = {

@@ -217,69 +217,49 @@ def list_purchase_orders(limit=20, date_from=None, supplier=None, status=None):
 def search_purchase_orders(search_term, search_field="all", limit=10):
     """
     Search purchase orders by various criteria
+    Uses client-side filtering since OData filters may not be supported on all entities
 
     Args:
         search_term: Term to search for
-        search_field: Field to search in (po_number, supplier, material, all)
+        search_field: Field to search in (po_number, supplier, all)
         limit: Maximum number of results
     """
-    # For now, search in PO items to find materials
-    select = [
-        "PurchaseOrder", "PurchaseOrderItem", "Material",
-        "PurchaseOrderItemText", "Supplier", "DocumentCurrency",
-        "OrderQuantity", "NetAmount", "PurchaseOrderDate"
-    ]
+    # Fetch orders without filters (more reliable than using OData filters)
+    # Fetch more than needed to ensure we have enough results after filtering
+    fetch_limit = min(limit * 10, 100)  # Fetch 10x limit but cap at 100
 
-    filters = None
-    if search_field == "po_number":
-        filters = f"PurchaseOrder eq '{search_term}'"
-    elif search_field == "supplier":
-        filters = f"substringof('{search_term}', Supplier)"
-    elif search_field == "material":
-        filters = f"Material eq '{search_term}'"
+    all_orders = list_purchase_orders(limit=fetch_limit)
 
-    url = _build_url(
-        "/sap/opu/odata/sap/C_PURCHASEORDER_FS_SRV/I_PurchaseOrderItem",
-        filters=filters,
-        select=select,
-        orderby="PurchaseOrderDate desc",
-        top=limit
-    )
+    if all_orders.get("status") != "success":
+        return all_orders
 
-    res = make_sap_request(url)
-    if res["status"] != "success":
-        return res
+    orders = all_orders.get("purchase_orders", [])
 
-    parsed = parse_json_entries(res["data"])
-    if "parse_error" in parsed:
-        return {"status": "error", "message": "Failed to parse response", "details": parsed}
+    # Client-side filtering
+    search_term_lower = search_term.lower()
+    results = []
 
-    results = [_clean_entry(e) for e in parsed.get("entries", [])]
+    for order in orders:
+        po_number = str(order.get("PurchaseOrder", "")).lower()
+        supplier = str(order.get("Supplier", "")).lower()
 
-    # Group by PO number
-    orders_dict = {}
-    for item in results:
-        po = item.get("PurchaseOrder")
-        if po not in orders_dict:
-            orders_dict[po] = {
-                "purchase_order": po,
-                "supplier": item.get("Supplier"),
-                "currency": item.get("DocumentCurrency"),
-                "date": item.get("PurchaseOrderDate"),
-                "items": []
-            }
-        orders_dict[po]["items"].append({
-            "item": item.get("PurchaseOrderItem"),
-            "material": item.get("Material"),
-            "description": item.get("PurchaseOrderItemText"),
-            "quantity": item.get("OrderQuantity"),
-            "net_amount": item.get("NetAmount")
-        })
+        match = False
+        if search_field == "po_number":
+            match = search_term_lower in po_number
+        elif search_field == "supplier":
+            match = search_term_lower in supplier
+        elif search_field == "all":
+            match = search_term_lower in po_number or search_term_lower in supplier
+
+        if match:
+            results.append(order)
+            if len(results) >= limit:
+                break
 
     return {
         "status": "success",
-        "search_results": list(orders_dict.values()),
-        "total_orders": len(orders_dict),
+        "search_results": results,
+        "total_orders": len(results),
         "search_criteria": {
             "search_term": search_term,
             "search_field": search_field,

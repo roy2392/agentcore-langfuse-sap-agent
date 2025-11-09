@@ -2,13 +2,14 @@
 
 ## Overview
 
-This project follows **AWS Bedrock AgentCore best practices** with proper Gateway and Identity management.
+This project implements an SAP inventory management agent using **AWS Bedrock AgentCore** with **Lambda-based tool execution**, following AWS best practices for secure, scalable AI agents.
 
 ## Architecture Diagram
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                      USER REQUEST                            │
+│                  "What purchase orders are open?"            │
 └────────────────────────┬────────────────────────────────────┘
                          │
                          ▼
@@ -16,275 +17,478 @@ This project follows **AWS Bedrock AgentCore best practices** with proper Gatewa
 │               BEDROCK AGENTCORE RUNTIME                      │
 │                                                              │
 │  ┌──────────────────────────────────────────────────────┐  │
-│  │  Strands Agent (agents/strands_claude.py)            │  │
+│  │  SAP Inventory Agent                                 │  │
+│  │  - Model: Claude 3.5 Sonnet                          │  │
+│  │  - System Prompt: cicd/system_prompt_english.txt     │  │
 │  │  - NO direct SAP API calls                           │  │
 │  │  - NO embedded credentials                           │  │
-│  │  - Uses Gateway endpoint for tools                   │  │
+│  │  - Uses Gateway endpoint for all tools               │  │
 │  └──────────────────────┬───────────────────────────────┘  │
 └─────────────────────────┼───────────────────────────────────┘
                           │
                           │ GATEWAY_ENDPOINT_URL
-                          │
+                          │ (OAuth 2.0 Bearer Token)
                           ▼
 ┌─────────────────────────────────────────────────────────────┐
 │              AGENTCORE GATEWAY                               │
+│              sap-inventory-gateway-prd                       │
 │                                                              │
-│  - OAuth Authentication (Inbound)                           │
-│  - IAM Authorization                                        │
-│  - Credential Injection (Outbound)                          │
-│  - Tool Discovery & Routing                                 │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │  Inbound Authentication                            │    │
+│  │  - AWS Cognito OAuth 2.0                           │    │
+│  │  - Client Credentials Flow                         │    │
+│  │  - JWT Token Validation                            │    │
+│  └────────────────────────────────────────────────────┘    │
 │                                                              │
-│  Gateway ID: sap-inventory-gateway-prd                      │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │  MCP Protocol Handler                              │    │
+│  │  - tools/list                                      │    │
+│  │  - tools/call                                      │    │
+│  │  - resources/* (future)                            │    │
+│  └────────────────────────────────────────────────────┘    │
+│                                                              │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │  Gateway Targets (Lambda Functions)                │    │
+│  │  ✓ sap-tools-prd (7 tools)                         │    │
+│  │  ✓ sap-get-complete-po-data-prd (1 tool)           │    │
+│  └────────────────────────────────────────────────────┘    │
 └──────────────────────────┬──────────────────────────────────┘
                            │
-                           │ MCP Target
-                           │
+                           │ AWS Lambda Invocation
+                           │ (IAM Authorization)
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
-│               SAP MCP SERVER                                 │
+│               LAMBDA FUNCTIONS                               │
 │                                                              │
-│  Container: Dockerfile.sap-mcp                              │
-│  Endpoint: http://sap-mcp-server:8000/mcp                   │
-│  Protocol: Streamable-HTTP MCP                              │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │  sap-tools-prd                                     │    │
+│  │  Handler: lambda_functions/sap_tools.py            │    │
+│  │  Runtime: Python 3.12                              │    │
+│  │  Timeout: 60s | Memory: 512MB                      │    │
+│  │                                                     │    │
+│  │  Tools:                                            │    │
+│  │  1. get_material_stock                             │    │
+│  │  2. get_open_purchase_orders                       │    │
+│  │  3. get_orders_awaiting_invoice_or_delivery        │    │
+│  │  4. get_inventory_with_open_orders                 │    │
+│  │  5. get_goods_receipts                             │    │
+│  │  6. list_purchase_orders                           │    │
+│  │  7. search_purchase_orders                         │    │
+│  │  8. get_material_in_transit                        │    │
+│  │  9. get_orders_in_transit                          │    │
+│  └────────────────────────────────────────────────────┘    │
 │                                                              │
-│  Tools Exposed:                                             │
-│    - get_stock_levels                                       │
-│    - get_low_stock_materials                                │
-│    - get_material_info                                      │
-│    - get_warehouse_stock                                    │
-│    - get_purchase_orders                                    │
-│    - get_goods_receipt                                      │
-│    - forecast_demand                                        │
-│    - get_complete_po_data                                   │
+│  ┌────────────────────────────────────────────────────┐    │
+│  │  sap-get-complete-po-data-prd                      │    │
+│  │  Handler: lambda_functions/get_complete_po_data.py │    │
+│  │  Runtime: Python 3.12                              │    │
+│  │  Timeout: 30s | Memory: 512MB                      │    │
+│  │                                                     │    │
+│  │  Tool:                                             │    │
+│  │  1. get_complete_po_data                           │    │
+│  └────────────────────────────────────────────────────┘    │
 └──────────────────────────┬──────────────────────────────────┘
                            │
-                           │ SAP Credentials (from Identity)
-                           │
+                           │ SAP Credentials
+                           │ (from Secrets Manager)
                            ▼
 ┌─────────────────────────────────────────────────────────────┐
 │                 SAP ODATA API                                │
 │                                                              │
 │  Host: aws-saptfc-demosystems-sapsbx.awsforsap.sap.aws.dev  │
 │  User: AWSDEMO                                              │
-│  Services:                                                  │
-│    - Purchase Order API (Working)                           │
-│    - Material Stock API (403 - Limited permissions)         │
-│    - Goods Receipt API (403 - Limited permissions)          │
+│  Auth: Basic Auth (from Secrets Manager)                    │
+│                                                              │
+│  Available Services:                                        │
+│  ✅ Purchase Order API (API_PURCHASEORDER_PROCESS_SRV)      │
+│  ✅ Material Document API (API_MATERIAL_DOCUMENT_SRV)       │
+│  ⚠️  Material Stock API (403 - Limited permissions)         │
+│  ⚠️  Goods Receipt API (403 - Limited permissions)          │
 └─────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────┐
-│           AGENTCORE IDENTITY (Credential Storage)            │
+│           AWS SECRETS MANAGER                                │
+│           (Credential Storage)                               │
 │                                                              │
-│  - Stores SAP_HOST, SAP_USER, SAP_PASSWORD                  │
-│  - Credentials injected at Gateway target level             │
-│  - NOT embedded in agent code                               │
-│  - Managed via AWS Secrets Manager                          │
+│  Secret: agentcore/sap/credentials-prd                      │
+│  {                                                           │
+│    "SAP_HOST": "aws-saptfc-demosystems-...",               │
+│    "SAP_USER": "AWSDEMO",                                   │
+│    "SAP_PASSWORD": "***"                                    │
+│  }                                                           │
+│                                                              │
+│  - Encrypted at rest (AWS KMS)                              │
+│  - Accessed by Lambda IAM role                              │
+│  - NOT embedded in code or environment                      │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ## Key Components
 
-### 1. Agent Runtime (`agents/strands_claude.py`)
-- **Responsibility**: Process user requests, orchestrate tool calls
-- **Tools Source**: AgentCore Gateway (NOT embedded)
-- **Credentials**: NONE (uses Gateway)
-- **Environment Variables**:
-  - `GATEWAY_ENDPOINT_URL` - Gateway endpoint for tool access
-  - `BEDROCK_MODEL_ID` - Claude model to use
-  - `LANGFUSE_*` - Tracing configuration
+### 1. Bedrock AgentCore Runtime
+
+**Purpose**: Hosts and executes the AI agent
+
+**Features**:
+- Managed runtime environment
+- Built-in session management
+- Automatic tool discovery and invocation
+- Streaming response support
+
+**Agent Configuration**:
+```json
+{
+  "agent_name": "strands_s3_english_PRD",
+  "model": "anthropic.claude-3-5-sonnet-20240620-v1:0",
+  "system_prompt_file": "cicd/system_prompt_english.txt",
+  "gateway_url": "https://gateway-id.gateway.bedrock-agentcore..."
+}
+```
 
 ### 2. AgentCore Gateway
-- **Responsibility**: Tool discovery, authentication, routing
-- **Inbound Auth**: OAuth (validates agent requests)
-- **Outbound Auth**: IAM + Credential Injection
-- **Targets**: MCP Target → SAP MCP Server
 
-### 3. SAP MCP Server (`Dockerfile.sap-mcp`)
-- **Responsibility**: Expose SAP APIs as MCP tools
-- **Protocol**: Streamable-HTTP MCP
-- **Endpoint**: `POST /mcp` (tools/list, tools/call)
-- **Session**: Supports `Mcp-Session-Id` header
-- **Deployment**: ECS/Fargate/EKS container
+**Purpose**: Secure, managed gateway between agent and tools
 
-### 4. AgentCore Identity
-- **Responsibility**: Credential storage and management
-- **Storage**: AWS Secrets Manager
-- **Injection**: Gateway injects credentials to MCP server
-- **Credentials**: SAP_HOST, SAP_USER, SAP_PASSWORD
+**Features**:
+- ✅ **OAuth 2.0 Authentication**: Cognito-based token validation
+- ✅ **MCP Protocol**: Standard Model Context Protocol support
+- ✅ **Lambda Integration**: Direct Lambda function invocation
+- ✅ **IAM Authorization**: Fine-grained access control
+- ✅ **CloudWatch Logging**: Full audit trail
 
-## Deployment
+**Gateway Targets**:
+```
+Target: sap-tools-lambda
+  Type: AWS Lambda
+  ARN: arn:aws:lambda:us-east-1:xxx:function:sap-tools-prd
+  Tools: 9 inventory management tools
 
-### Prerequisites
+Target: sap-complete-po-lambda
+  Type: AWS Lambda
+  ARN: arn:aws:lambda:us-east-1:xxx:function:sap-get-complete-po-data-prd
+  Tools: 1 comprehensive PO tool
+```
+
+### 3. AWS Cognito OAuth
+
+**Purpose**: Secure authentication for Gateway access
+
+**Configuration**:
+- **User Pool**: `sap-gateway-oauth-prd`
+- **Resource Server**: `sap-gateway-prd`
+- **OAuth Scope**: `sap-gateway-prd/tools.invoke`
+- **Flow**: Client Credentials (machine-to-machine)
+
+**Token Exchange**:
 ```bash
-# Set environment variables
-export AWS_REGION=us-east-1
-export SAP_HOST=aws-saptfc-demosystems-sapsbx.awsforsap.sap.aws.dev
-export SAP_USER=AWSDEMO
-export SAP_PASSWORD=<password>
-export LANGFUSE_SECRET_KEY=<key>
-export LANGFUSE_PUBLIC_KEY=<key>
-export LANGFUSE_HOST=https://cloud.langfuse.com
+POST https://sap-gateway-prd-123456789.auth.us-east-1.amazoncognito.com/oauth2/token
+Authorization: Basic <base64(client_id:client_secret)>
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials&scope=sap-gateway-prd/tools.invoke
+
+Response:
+{
+  "access_token": "eyJraWQiOiI...",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}
 ```
 
-### Step 1: Deploy SAP MCP Server
+### 4. Lambda Functions
+
+**Purpose**: Execute SAP tool logic with credential injection
+
+**Function 1: sap-tools-prd**
+- **Handler**: `sap_tools.lambda_handler`
+- **Tools**: 9 inventory management tools
+- **Runtime**: Python 3.12
+- **Dependencies**: `requests` library (via Lambda Layer)
+- **Timeout**: 60 seconds
+- **Memory**: 512 MB
+
+**Function 2: sap-get-complete-po-data-prd**
+- **Handler**: `get_complete_po_data.lambda_handler`
+- **Tools**: 1 comprehensive PO data tool
+- **Runtime**: Python 3.12
+- **Timeout**: 30 seconds
+- **Memory**: 512 MB
+
+**Environment Variables**:
 ```bash
-# Build Docker image
-docker build -f Dockerfile.sap-mcp -t sap-mcp-server:latest .
-
-# Deploy to ECS/Fargate (example)
-# TODO: Add actual ECS deployment commands
-# The container must be accessible at a URL the Gateway can reach
-
-# Example service URL:
-# http://sap-mcp-server.internal:8000/mcp
+SECRET_ARN=arn:aws:secretsmanager:us-east-1:xxx:secret:agentcore/sap/credentials-prd-xxx
 ```
 
-### Step 2: Deploy Gateway
-```bash
-# Deploy Gateway with MCP target
-python -m utils.gateway \
-  --gateway-name sap-inventory-gateway \
-  --mcp-url http://sap-mcp-server.internal:8000/mcp \
-  --region us-east-1
+**IAM Permissions**:
+- ✅ `secretsmanager:GetSecretValue` - Read SAP credentials
+- ✅ CloudWatch Logs write access
 
-# Output will include:
-# Gateway Endpoint: https://<gateway-id>.agentcore.us-east-1.amazonaws.com
+### 5. AWS Secrets Manager
+
+**Purpose**: Secure storage of SAP credentials
+
+**Secret Structure**:
+```json
+{
+  "SAP_HOST": "aws-saptfc-demosystems-sapsbx.awsforsap.sap.aws.dev",
+  "SAP_USER": "AWSDEMO",
+  "SAP_PASSWORD": "***"
+}
 ```
 
-### Step 3: Deploy Agent
-```bash
-# Set Gateway endpoint
-export GATEWAY_ENDPOINT_URL=https://<gateway-id>.agentcore.us-east-1.amazonaws.com
+**Security**:
+- Encrypted at rest with AWS KMS
+- Encrypted in transit (TLS)
+- Access via IAM policies only
+- Rotation supported (manual or automatic)
 
-# Deploy agent
-python cicd/deploy_with_gateway.py --environment PRD
-```
+## Data Flow
 
-### Complete Deployment (All Steps)
-```bash
-# Run complete deployment script
-python cicd/deploy_with_gateway.py --environment PRD
-```
+### Example: User Query Processing
 
-## Testing
+1. **User Request**:
+   ```
+   User: "What are the details of purchase order 4500000520?"
+   ```
 
-### Test SAP MCP Server Directly
-```bash
-# Start MCP server locally
-python utils/sap_mcp_http_server.py --port 8000
+2. **Agent Processing**:
+   - Agent receives query
+   - Analyzes system prompt: "Use get_complete_po_data tool"
+   - Constructs tool call request
 
-# Test tools list
-curl -X POST http://localhost:8000/mcp \
-  -H "Content-Type: application/json" \
-  -d '{"method": "tools/list"}'
+3. **Gateway Authentication**:
+   - Agent includes OAuth Bearer token in request
+   - Gateway validates token with Cognito
+   - Gateway authorizes tool access
 
-# Test tool execution
-curl -X POST http://localhost:8000/mcp \
-  -H "Content-Type: application/json" \
-  -d '{
-    "method": "tools/call",
-    "params": {
-      "name": "get_complete_po_data",
-      "arguments": {"po_number": "4500000520"}
-    }
-  }'
-```
+4. **Tool Invocation**:
+   - Gateway invokes Lambda function: `sap-get-complete-po-data-prd`
+   - Lambda retrieves SAP credentials from Secrets Manager
+   - Lambda makes SAP OData API call
+   - Lambda returns formatted response
 
-### Test Agent with Gateway
-```bash
-# Run evaluation with deployed agent
-python cicd/evaluate_with_sap_mcp.py \
-  --agent-name strands_sonnet_inventory_PRD
+5. **Response to User**:
+   ```
+   Agent: "Purchase Order 4500000520:
+   - Supplier: ABC Corp
+   - Date: 2024-08-15
+   - Total: $209,236.00
+   - 7 items
+   - Status: Open"
+   ```
 
-# Traces will appear in Langfuse
-```
+## Security Architecture
 
-## Security & Best Practices
-
-### ✅ What We Follow
-- **Gateway Pattern**: Agent → Gateway → MCP → API (no direct API access)
-- **Identity Management**: Credentials in AgentCore Identity, NOT in code
-- **OAuth Auth**: Gateway enforces authentication
-- **Stateless Protocol**: MCP server uses streamable-HTTP
-- **Session Continuity**: `Mcp-Session-Id` header support
-- **Credential Injection**: Gateway injects credentials at target level
-
-### ❌ What We Avoid
-- ❌ Embedding API credentials in agent code
-- ❌ Direct API calls from agent
-- ❌ Stateful MCP connections
-- ❌ Hardcoded endpoints
-- ❌ Mixed authentication patterns
-
-## File Structure
+### Defense in Depth
 
 ```
-agentcore-langfuse-sap-agent/
-├── agents/
-│   └── strands_claude.py        # Agent (uses Gateway, no direct SAP calls)
-├── utils/
-│   ├── sap_mcp_server.py        # MCP server core logic
-│   ├── sap_mcp_http_server.py   # Streamable-HTTP wrapper (Gateway compatible)
-│   ├── gateway.py               # Gateway & Identity management
-│   └── agent.py                 # Agent deployment
-├── cicd/
-│   ├── deploy_with_gateway.py   # Complete deployment script
-│   └── evaluate_with_sap_mcp.py # Evaluation with agent invocation
-├── Dockerfile.sap-mcp           # SAP MCP Server container
-└── ARCHITECTURE.md              # This file
+Layer 1: AWS IAM
+  ↓ Controls who can deploy/manage infrastructure
+
+Layer 2: OAuth 2.0 (Cognito)
+  ↓ Controls who can access Gateway
+
+Layer 3: Gateway Authorization
+  ↓ Controls which tools can be invoked
+
+Layer 4: Lambda IAM Role
+  ↓ Controls Lambda access to Secrets Manager
+
+Layer 5: Secrets Manager
+  ↓ Stores encrypted SAP credentials
+
+Layer 6: SAP API
+  ↓ Final authentication with SAP system
 ```
 
-## Migration from Old Architecture
+### Credential Flow (Secure)
 
-### Old (Direct API Access)
+```
+✅ GOOD (Current Architecture):
+
+Agent → Gateway (OAuth token) → Lambda → Secrets Manager → SAP API
+                                    ↑
+                              IAM Role grants
+                              secretsmanager:GetSecretValue
+```
+
+### What We Avoid (Insecure)
+
+```
+❌ BAD (Hardcoded):
+Agent (with embedded SAP credentials) → SAP API
+
+❌ BAD (Environment Variables):
+Agent → Lambda (SAP_USER/SAP_PASSWORD in env vars) → SAP API
+```
+
+## Deployment Architecture
+
+### Infrastructure as Code (Terraform)
+
+```
+terraform/
+├── main.tf           # Provider and backend configuration
+├── cognito.tf        # OAuth user pool and resource server
+├── gateway.tf        # AgentCore Gateway and targets
+├── lambda.tf         # Lambda functions and layers
+├── secrets.tf        # Secrets Manager secret
+├── iam.tf            # IAM roles and policies
+└── gateway_output.json  # Output for agent deployment
+```
+
+### Deployment Workflow
+
+```
+1. Terraform Apply
+   ↓ Creates infrastructure
+   ↓ Outputs gateway_url, cognito_client_id, etc.
+
+2. Save Configuration
+   ↓ terraform/gateway_output.json
+
+3. Deploy Agent (cicd/deploy_agent.py)
+   ↓ Reads gateway_output.json
+   ↓ Reads system_prompt_english.txt
+   ↓ Calls AgentCore API to create agent
+
+4. Test Agent (cicd/tst.py)
+   ↓ Invokes agent with test queries
+   ↓ Validates tool execution
+   ↓ Checks Langfuse traces
+```
+
+## Tool Catalog
+
+| Tool Name | Lambda Function | Purpose | SAP API Endpoint |
+|-----------|----------------|---------|------------------|
+| get_material_stock | sap-tools-prd | Get material inventory levels | API_MATERIAL_STOCK_SRV |
+| get_open_purchase_orders | sap-tools-prd | List open POs | API_PURCHASEORDER_PROCESS_SRV |
+| get_orders_awaiting_invoice_or_delivery | sap-tools-prd | Find orders with issues | API_PURCHASEORDER_PROCESS_SRV |
+| get_inventory_with_open_orders | sap-tools-prd | Combined view | Multiple APIs |
+| get_goods_receipts | sap-tools-prd | Recent receipts | API_MATERIAL_DOCUMENT_SRV |
+| list_purchase_orders | sap-tools-prd | List all POs | API_PURCHASEORDER_PROCESS_SRV |
+| search_purchase_orders | sap-tools-prd | Search specific PO | API_PURCHASEORDER_PROCESS_SRV |
+| get_material_in_transit | sap-tools-prd | Materials in transit | API_PURCHASEORDER_PROCESS_SRV |
+| get_orders_in_transit | sap-tools-prd | POs in transit | API_PURCHASEORDER_PROCESS_SRV |
+| get_complete_po_data | sap-get-complete-po-data-prd | Complete PO details | API_PURCHASEORDER_PROCESS_SRV |
+
+## Observability
+
+### CloudWatch Logs
+
+```
+Log Groups:
+- /aws/lambda/sap-tools-prd
+- /aws/lambda/sap-get-complete-po-data-prd
+- /aws/bedrock-agentcore/agents/<agent-id>
+- /aws/bedrock-agentcore/gateway/<gateway-id>
+```
+
+### Langfuse Integration (Optional)
+
 ```python
-# ❌ OLD - Direct SAP API calls in agent
-from utils.test_sap_api import get_stock_levels
+from langfuse import Langfuse
 
-@tool
-def sap_get_stock_levels(material: str):
-    return get_stock_levels(material)
+langfuse = Langfuse(
+    public_key="pk-lf-...",
+    secret_key="sk-lf-...",
+    host="https://cloud.langfuse.com"
+)
 
-agent = Agent(tools=[sap_get_stock_levels])
+# Automatic trace collection for agent invocations
 ```
 
-### New (Gateway Pattern)
-```python
-# ✅ NEW - Tools via Gateway
-from mcp.client.streamable_http import streamablehttp_client
-from strands.tools.mcp.mcp_client import MCPClient
+### Metrics
 
-gateway_url = os.getenv("GATEWAY_ENDPOINT_URL")
-mcp_client = MCPClient(lambda: streamablehttp_client(gateway_url))
+Key metrics to monitor:
+- Agent invocation count
+- Tool execution latency
+- Lambda duration and errors
+- SAP API response times
+- OAuth token validation success rate
 
-agent = Agent(tools=[mcp_client])  # Tools from Gateway
-```
+## Scalability
 
-## Troubleshooting
+### Current Limits
 
-### Agent has no tools
-- Check `GATEWAY_ENDPOINT_URL` is set
-- Verify Gateway is deployed and accessible
-- Check Gateway has MCP target configured
+| Component | Limit | Notes |
+|-----------|-------|-------|
+| Lambda Concurrency | 1000 (default) | Can increase via quota request |
+| Lambda Timeout | 60s (sap-tools) | Configurable in terraform/lambda.tf |
+| Gateway Targets | 10 per gateway | Sufficient for current tools |
+| Cognito MAU | 50,000 (free tier) | Machine-to-machine doesn't count |
 
-### 403 Forbidden from SAP API
-- AWSDEMO user has limited permissions
-- Only Purchase Order APIs work
-- Stock/Material APIs require additional SAP permissions
+### Scaling Strategies
 
-### MCP server not responding
-- Check container is running
-- Verify endpoint is `POST /mcp` (not `/mcp/tools`)
-- Check `Mcp-Session-Id` header is supported
+**Horizontal Scaling**:
+- Lambda automatically scales to handle concurrent requests
+- Gateway distributes load across Lambda invocations
 
-### Gateway not found
-- AgentCore Gateway APIs are preview functionality
-- Check region availability
-- Verify AWS credentials have correct permissions
+**Vertical Scaling**:
+- Increase Lambda memory allocation (currently 512 MB)
+- Increase Lambda timeout (currently 30-60s)
+
+**Performance Optimization**:
+- Use Lambda reserved concurrency for predictable performance
+- Enable Lambda SnapStart for faster cold starts (when supported for Python 3.12)
+- Cache SAP API responses in Lambda (with TTL)
+
+## Cost Optimization
+
+### Current Architecture Cost Breakdown
+
+**Monthly estimate (10,000 agent queries)**:
+- AgentCore Gateway: ~$0 (preview, pricing TBD)
+- Lambda invocations: ~$0.20
+- Lambda duration (10K × 2s avg): ~$0.03
+- Secrets Manager: $0.40
+- CloudWatch Logs: ~$0.50
+- **Total**: **< $2/month**
+
+**At scale (1M agent queries/month)**:
+- Lambda invocations: ~$20
+- Lambda duration: ~$3
+- Other services: ~$1
+- **Total**: **< $25/month**
+
+## Comparison to Alternatives
+
+| Architecture | Pros | Cons |
+|-------------|------|------|
+| **Lambda (Current)** | ✅ Serverless, scales automatically<br>✅ Pay-per-use pricing<br>✅ Integrated with AgentCore Gateway | ⚠️ Cold start latency<br>⚠️ 60s timeout limit |
+| Container (ECS/Fargate) | ✅ Long-running processes<br>✅ Custom dependencies | ❌ Higher cost (always running)<br>❌ More complex deployment |
+| Direct Agent→SAP | ✅ Lower latency | ❌ Security risk (embedded credentials)<br>❌ Not AWS best practice |
+
+## Future Enhancements
+
+### Planned Improvements
+
+1. **VPC Integration**:
+   - Deploy Lambda in VPC for private SAP access
+   - Use VPC endpoints for Secrets Manager
+
+2. **Caching Layer**:
+   - Add ElastiCache/DynamoDB for SAP response caching
+   - Reduce SAP API calls
+
+3. **Additional Tools**:
+   - Material master data queries
+   - Vendor information lookups
+   - Inventory forecasting
+
+4. **Multi-tenancy**:
+   - Support multiple SAP systems
+   - Per-customer credential isolation
+
+5. **Streaming Responses**:
+   - Enable agent streaming for longer queries
+   - Improve user experience for complex analyses
 
 ## References
 
-- [AWS AgentCore Gateway Documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/gateway.html)
-- [AgentCore Identity](https://aws.amazon.com/blogs/machine-learning/introducing-amazon-bedrock-agentcore-identity-securing-agentic-ai-at-scale/)
-- [MCP Protocol](https://modelcontextprotocol.io/)
-- [Streamable-HTTP MCP](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/runtime-mcp.html)
+- [AWS AgentCore Documentation](https://docs.aws.amazon.com/bedrock-agentcore/latest/devguide/)
+- [MCP Protocol Specification](https://modelcontextprotocol.io/)
+- [AWS Lambda Best Practices](https://docs.aws.amazon.com/lambda/latest/dg/best-practices.html)
+- [Cognito OAuth 2.0](https://docs.aws.amazon.com/cognito/latest/developerguide/cognito-userpools-server-side-client-credentials.html)
+- [Deployment Guide](DEPLOYMENT_GUIDE.md)

@@ -67,7 +67,7 @@ langfuse = get_langfuse_client()
 
 # Initialize Bedrock client for evaluation
 bedrock_client = boto3.client('bedrock-runtime', region_name=os.getenv('AWS_REGION', 'us-east-1'))
-EVALUATION_MODEL = "anthropic.claude-3-sonnet-20240229-v1:0"
+EVALUATION_MODEL = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
 
 
 # Mock DatasetItemClient for compatibility
@@ -231,7 +231,8 @@ Respond with ONLY a number between 0 and 1."""
         return score
     except Exception as e:
         print(f"Error evaluating with Bedrock: {str(e)}")
-        return 0.5  # Return neutral score on error
+        # Fail evaluation instead of returning fake score
+        raise Exception(f"Bedrock evaluation failed: {str(e)}")
 
 
 # Define Bedrock evaluator function
@@ -278,12 +279,8 @@ def bedrock_quality_evaluator(*, input, output, expected_output, **kwargs):
         return evaluation
     except Exception as e:
         print(f"[EVALUATOR] Error: {str(e)}")
-        # Return a default score on error rather than failing
-        return Evaluation(
-            name="bedrock_quality",
-            value=0.5,
-            comment=f"Error during evaluation: {str(e)}"
-        )
+        # Fail evaluation instead of returning fake score
+        raise Exception(f"Bedrock evaluation failed: {str(e)}")
 
 # Run experiment with Bedrock evaluator
 print(f"\n{'='*80}")

@@ -65,10 +65,8 @@ print(f"Agent ID: {config.get('agent_id', 'N/A')}")
     # Initialize Langfuse client
 langfuse = get_langfuse_client()
 
-# Initialize Bedrock client for evaluation
-bedrock_client = boto3.client('bedrock-runtime', region_name=os.getenv('AWS_REGION', 'us-east-1'))
-EVALUATION_MODEL = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
-
+# Note: Bedrock evaluation disabled - not accessible in channel program accounts
+# Using simple rule-based evaluator instead
 
 # Mock DatasetItemClient for compatibility
 class MockDatasetItem:
@@ -168,133 +166,67 @@ def agent_task(*, item, **kwargs):
         raise
 
 
-def evaluate_response_with_bedrock(input_text, output_text, expected_output):
-    """
-    Evaluate agent response using Claude via Bedrock.
-    Returns a score between 0 and 1.
-    """
-    try:
-        evaluation_prompt = f"""Evaluate the following agent response for quality and accuracy.
+# Define simple rule-based evaluator (Bedrock not accessible in channel program accounts)
+def simple_quality_evaluator(*, input, output, expected_output, **kwargs):
+    """Simple rule-based evaluator that checks if the agent responded successfully.
 
-Question: {input_text}
+    Returns 1.0 if:
+    - Output is not empty
+    - No error messages in output
+    - Output length > 10 characters
 
-Agent Response: {output_text}
-
-Expected/Target: {expected_output}
-
-Please evaluate if the agent response:
-1. Answers the question correctly
-2. Is relevant to the question
-3. Provides useful information
-4. Is well-structured in Hebrew
-
-Rate the response on a scale of 0-1 where:
-- 0 = Completely wrong or irrelevant
-- 0.5 = Partially correct but has issues
-- 1 = Excellent response that fully answers the question
-
-Respond with ONLY a number between 0 and 1."""
-
-        # Call Bedrock Claude using Converse API
-        response = bedrock_client.converse(
-            modelId=EVALUATION_MODEL,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "text": evaluation_prompt
-                        }
-                    ]
-                }
-            ],
-            inferenceConfig={
-                "maxTokens": 100
-            }
-        )
-
-        # Parse the response
-        score_text = response['output']['message']['content'][0]['text'].strip()
-
-        # Extract score (handle various formats)
-        try:
-            score = float(score_text)
-        except ValueError:
-            # Try to extract number from text
-            import re
-            numbers = re.findall(r'\d+\.?\d*', score_text)
-            score = float(numbers[0]) if numbers else 0.5
-
-        # Ensure score is between 0 and 1
-        score = max(0.0, min(1.0, score))
-
-        return score
-    except Exception as e:
-        print(f"Error evaluating with Bedrock: {str(e)}")
-        # Fail evaluation instead of returning fake score
-        raise Exception(f"Bedrock evaluation failed: {str(e)}")
-
-
-# Define Bedrock evaluator function
-def bedrock_quality_evaluator(*, input, output, expected_output, **kwargs):
-    """Custom evaluator using Bedrock Claude.
-
-    According to Langfuse documentation, evaluators must return:
-    - A dict with keys: name, value (required), comment (optional), metadata (optional)
-    - Or a list of such dicts
-    - OR an Evaluation object
-
-    The evaluator receives:
-    - input: The input to the task
-    - output: The output from the task
-    - expected_output: The expected output from the dataset
-    - metadata: Optional metadata from the dataset item
-    - **kwargs: Additional keyword arguments
+    Returns 0.0 otherwise.
     """
     try:
-        print(f"\n[EVALUATOR] Starting Bedrock quality evaluation")
+        print(f"\n[EVALUATOR] Starting simple quality evaluation")
 
-        # Extract input text - handle both dict and string formats
-        if isinstance(input, dict) and 'question' in input:
-            input_text = input['question']
+        output_text = str(output)
+
+        # Check for errors
+        error_indicators = ['error', 'failed', 'exception', 'not available']
+        has_error = any(indicator in output_text.lower() for indicator in error_indicators)
+
+        # Check if output is meaningful
+        is_empty = len(output_text.strip()) < 10
+
+        # Determine score
+        if is_empty:
+            score = 0.0
+            comment = "Empty or very short response"
+        elif has_error:
+            score = 0.5
+            comment = "Response contains error indicators"
         else:
-            input_text = str(input)
+            score = 1.0
+            comment = "Valid response received"
 
-        # Evaluate the response
-        score = evaluate_response_with_bedrock(
-            input_text=input_text,
-            output_text=str(output),
-            expected_output=str(expected_output)
-        )
-
-        print(f"[EVALUATOR] Score: {score}")
+        print(f"[EVALUATOR] Score: {score} - {comment}")
 
         # Return as a Langfuse Evaluation object
         evaluation = Evaluation(
-            name="bedrock_quality",
+            name="simple_quality",
             value=score,
-            comment=f"Quality score from Claude evaluation: {score:.2f}"
+            comment=comment
         )
         print(f"[EVALUATOR] Returning Evaluation: {evaluation}")
         return evaluation
     except Exception as e:
         print(f"[EVALUATOR] Error: {str(e)}")
-        # Fail evaluation instead of returning fake score
-        raise Exception(f"Bedrock evaluation failed: {str(e)}")
+        raise Exception(f"Evaluation failed: {str(e)}")
 
-# Run experiment with Bedrock evaluator
+# Run experiment with simple evaluator (Bedrock not accessible in channel program accounts)
 print(f"\n{'='*80}")
-print("Running experiment with Bedrock Claude evaluator...")
+print("Running experiment with simple rule-based evaluator...")
 print(f"{'='*80}\n")
 
 # Convert dataset items to list for experiment
 data = list(items_list)
 
 result = langfuse.run_experiment(
-    name="Hebrew Inventory Agent - Bedrock Evaluation",
+    name="Hebrew Inventory Agent - Simple Evaluation",
     data=data,
     task=agent_task,
-    evaluators=[bedrock_quality_evaluator]
+    evaluators=[simple_quality_evaluator]
 )
 
 # Print experiment summary
@@ -324,7 +256,7 @@ for idx, item_result in enumerate(result.item_results or []):
             eval_value = getattr(evaluation, 'value', None)
             eval_comment = getattr(evaluation, 'comment', None)
 
-            if eval_name == 'bedrock_quality':
+            if eval_name == 'simple_quality':
                 quality_scores.append({
                     "name": eval_name,
                     "value": eval_value,
@@ -351,7 +283,7 @@ with open('evaluation_results.json', 'w') as f:
     json.dump(results, f, indent=2)
 
 print(f"\n{'='*80}")
-print(f"Evaluation Results Summary (Bedrock Claude):")
+print(f"Evaluation Results Summary (Simple Rule-Based):")
 print(f"  Average Score: {avg_score:.3f} ({avg_score*100:.1f}%)")
 print(f"  Total Items: {len(quality_scores)}")
 print(f"  Results saved to: evaluation_results.json")

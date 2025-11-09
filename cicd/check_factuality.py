@@ -52,7 +52,7 @@ def print_factuality_summary(results: Dict[str, Any]) -> None:
 
     print(f'Experiment: {experiment_name}')
     print(f'Total items evaluated: {total_items}')
-    print(f'Average Quality Score (Bedrock Claude): {avg_score:.3f} ({avg_score*100:.1f}%)')
+    print(f'Average Quality Score (Simple Rule-Based): {avg_score:.3f} ({avg_score*100:.1f}%)')
 
     # Print individual scores
     print('\nIndividual scores:')
@@ -112,7 +112,7 @@ if __name__ == '__main__':
     # Parse command line arguments
     import argparse
 
-    parser = argparse.ArgumentParser(description='Check evaluation results from Bedrock Claude')
+    parser = argparse.ArgumentParser(description='Check evaluation results from simple rule-based evaluator')
     parser.add_argument('--results-file', '-f',
                        default='evaluation_results.json',
                        help='Path to evaluation results JSON file (default: evaluation_results.json)')

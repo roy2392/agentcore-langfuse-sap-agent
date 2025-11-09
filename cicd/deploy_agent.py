@@ -54,16 +54,19 @@ def main():
     model = config["model"]
     system_prompt = config["system_prompt"]
 
-    # If system_prompt has a prompt_file reference, read the prompt from that file
+    # If system_prompt has a prompt_file reference, verify it exists
+    # The prompt will be loaded from file by the agent code at runtime (not via env var)
     if "prompt_file" in system_prompt:
         prompt_file_path = system_prompt["prompt_file"]
         try:
-            print(f"Reading system prompt from {prompt_file_path}...")
+            print(f"Verifying system prompt file exists: {prompt_file_path}...")
             with open(prompt_file_path, 'r') as f:
                 prompt_content = f.read()
-            # Replace the prompt_file reference with the actual prompt content
-            system_prompt["prompt"] = prompt_content
+            print(f"✓ System prompt file verified ({len(prompt_content)} chars)")
+            # Remove both prompt_file and prompt from dict - agent loads from bundled file
             del system_prompt["prompt_file"]
+            if "prompt" in system_prompt:
+                del system_prompt["prompt"]
         except FileNotFoundError:
             print(f"Error: System prompt file {prompt_file_path} not found.")
             sys.exit(1)

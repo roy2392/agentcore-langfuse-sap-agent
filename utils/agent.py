@@ -156,7 +156,7 @@ def deploy_agent(model, system_prompt, gateway_url, cognito_client_id, cognito_c
         region=region,
         agent_name=agent_name,
         disable_otel=True,
-       memory_mode='NO_MEMORY'
+        memory_mode='STM_ONLY'  # Enable short-term memory per session
     )
 
     print(response)

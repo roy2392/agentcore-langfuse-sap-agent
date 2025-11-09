@@ -659,46 +659,93 @@ def get_inventory_with_open_orders(threshold=10):
 
     stock_items = stock_res.get("stock_info", [])
 
-    # Get open orders
-    open_orders_res = get_open_purchase_orders(limit=100)
-    if open_orders_res.get("status") != "success":
+    # Build map of materials in stock
+    stock_materials = {item.get("Material"): item for item in stock_items}
+
+    # Get open purchase orders (which includes PO numbers)
+    orders_res = get_open_purchase_orders(limit=100)
+    if orders_res.get("status") != "success":
         return {
             "status": "partial",
-            "message": "Could not retrieve open orders",
+            "message": "Could not retrieve open purchase orders",
             "inventory_with_orders": []
         }
 
-    # Build material->orders map
+    # For each open PO, get its items
+    # Use the same select field variants as get_complete_po_data.py (fallback mechanism)
+    select_variants = [
+        ["PurchaseOrder", "PurchaseOrderItem", "Material", "PurchaseOrderItemText",
+         "OrderQuantity", "PurchaseOrderQuantityUnit"],
+        ["PurchaseOrder", "PurchaseOrderItem", "Material", "MaterialDescription",
+         "OrderQuantity", "PurchaseOrderQuantityUnit"],
+        ["PurchaseOrder", "PurchaseOrderItem", "Material",
+         "OrderQuantity", "PurchaseOrderQuantityUnit"]
+    ]
+
+    # Collect all PO items from all open orders
+    all_po_items = []
+    open_orders = orders_res.get("open_orders", [])
+
+    for order in open_orders:
+        po_number = order.get("PurchaseOrder")
+        if not po_number:
+            continue
+
+        # Try to get items for this PO using fallback mechanism
+        items_retrieved = False
+        for sel in select_variants:
+            url = _build_url(
+                "/sap/opu/odata/sap/C_PURCHASEORDER_FS_SRV/I_PurchaseOrderItem",
+                filters=f"PurchaseOrder eq '{po_number}'",
+                select=sel,
+                orderby="PurchaseOrderItem asc"
+            )
+
+            res = make_sap_request(url)
+            if res["status"] == "success":
+                parsed = parse_json_entries(res["data"])
+                if "entries" in parsed:
+                    for entry in parsed.get("entries", []):
+                        cleaned = _clean_entry(entry)
+                        cleaned["Supplier"] = order.get("Supplier")  # Add supplier from header
+                        all_po_items.append(cleaned)
+                    items_retrieved = True
+                    break
+
+        if not items_retrieved:
+            # If we can't get items for this PO, skip it
+            continue
+
+    # Build material->orders map from collected PO items
     material_orders = {}
-    for order in open_orders_res.get("open_purchase_orders", []):
-        for item in order.get("items", []):
-            material = item.get("material")
-            if material not in material_orders:
-                material_orders[material] = []
-            material_orders[material].append({
-                "purchase_order": order["purchase_order"],
-                "supplier": order["supplier"],
-                "order_date": order["order_date"],
-                "open_quantity": item["open_quantity"],
-                "unit": item["unit"]
-            })
+    for item in all_po_items:
+        material = item.get("Material")
+        if not material:
+            continue
+
+        if material not in material_orders:
+            material_orders[material] = []
+
+        material_orders[material].append({
+            "purchase_order": item.get("PurchaseOrder"),
+            "supplier": item.get("Supplier"),
+            "order_quantity": item.get("OrderQuantity", 0),
+            "unit": item.get("PurchaseOrderQuantityUnit")
+        })
 
     # Cross-reference: materials with stock AND open orders
     inventory_with_orders = []
-    for stock_item in stock_items:
-        material = stock_item.get("Material")
-        available_qty = stock_item.get("AvailableQuantity", 0)
-
+    for material, stock_item in stock_materials.items():
         if material in material_orders:
             open_orders = material_orders[material]
-            total_open_qty = sum(o["open_quantity"] for o in open_orders)
+            total_open_qty = sum(o["order_quantity"] for o in open_orders)
 
             inventory_with_orders.append({
                 "material": material,
                 "description": stock_item.get("MaterialDescription"),
                 "plant": stock_item.get("Plant"),
                 "storage_location": stock_item.get("StorageLocation"),
-                "available_quantity": available_qty,
+                "available_quantity": stock_item.get("AvailableQuantity", 0),
                 "unit": stock_item.get("BaseUnit"),
                 "total_open_quantity": total_open_qty,
                 "open_orders_count": len(open_orders),

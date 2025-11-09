@@ -159,24 +159,49 @@ def main():
             json.dump(config, f, indent=2)
         print(f"Agent ARN added to hp_config.json with {environment} environment key")
         
-        # Wait for agent to be ready
-        print("Waiting for agent to be ready...")
+        # Wait for agent endpoint to be ready
+        print("Waiting for agent endpoint to be provisioned...")
         import time
-        time.sleep(60)        
-        # status_response = result['launch_result'].status()
-        # status = status_response.endpoint['status']
-        # end_status = ['READY', 'CREATE_FAILED', 'DELETE_FAILED', 'UPDATE_FAILED']
-        # while status not in end_status:
-        #     time.sleep(10)
-        #     status_response = result['launch_result'].status()
-        #     status = status_response.endpoint['status']
-        #     print(f"Agent status: {status}")
-        
-        # if status == 'READY':
-        #     print("Agent is ready!")
-        # else:
-        #     print(f"Agent deployment failed with status: {status}")
-        #     sys.exit(1)
+        import boto3
+
+        from utils.agent import boto_session
+        region = boto_session.region_name or 'us-east-1'
+
+        agentcore_control_client = boto3.client('bedrock-agentcore-control', region_name=region)
+        agent_runtime_id = result['launch_result'].agent_id
+
+        max_wait_time = 300  # 5 minutes max
+        wait_interval = 10   # Check every 10 seconds
+        elapsed_time = 0
+
+        while elapsed_time < max_wait_time:
+            try:
+                response = agentcore_control_client.get_agent_runtime(
+                    agentRuntimeId=agent_runtime_id
+                )
+                status = response.get('status', 'UNKNOWN')
+                print(f"Agent status: {status} (waited {elapsed_time}s)")
+
+                if status == 'ACTIVE':
+                    print("✓ Agent endpoint is ACTIVE and ready!")
+                    break
+                elif status in ['FAILED', 'DELETED']:
+                    print(f"✗ Agent deployment failed with status: {status}")
+                    sys.exit(1)
+
+                time.sleep(wait_interval)
+                elapsed_time += wait_interval
+            except Exception as e:
+                print(f"Error checking agent status: {e}")
+                time.sleep(wait_interval)
+                elapsed_time += wait_interval
+
+        if elapsed_time >= max_wait_time:
+            print(f"⚠ Warning: Agent may not be ready after {max_wait_time}s, but continuing...")
+
+        # Additional buffer to ensure endpoint is fully ready for invocations
+        print("Adding 30s buffer for endpoint stabilization...")
+        time.sleep(30)
         
         return result
         

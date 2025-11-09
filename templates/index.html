@@ -595,6 +595,7 @@ Just type your question or select one of the options on the left 👈</div>
                     headers: {
                         'Content-Type': 'application/json',
                     },
+                    credentials: 'include',  // Required for Flask session cookies
                     body: JSON.stringify({
                         message: message,
                         environment: '{{ environment }}'
@@ -670,7 +671,8 @@ Just type your question or select one of the options on the left 👈</div>
 
             try {
                 const response = await fetch('/api/reset', {
-                    method: 'POST'
+                    method: 'POST',
+                    credentials: 'include'  // Required for Flask session cookies
                 });
 
                 if (response.ok) {

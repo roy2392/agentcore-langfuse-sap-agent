@@ -278,19 +278,32 @@ def invoke_agent(agent_arn, prompt, session_id=None):
                 if not line.startswith('{'):
                     continue
 
-                # Try to parse as JSON event
+                # Try to parse as JSON event and extract text recursively
                 try:
                     event = json.loads(line)
 
-                    # Extract text from contentBlockDelta events
-                    if isinstance(event, dict) and 'event' in event:
-                        event_data = event['event']
-                        if isinstance(event_data, dict) and 'contentBlockDelta' in event_data:
-                            delta = event_data['contentBlockDelta'].get('delta', {})
-                            if isinstance(delta, dict) and 'text' in delta:
-                                extracted_text.append(delta['text'])
+                    # Helper function to recursively extract all 'text' fields
+                    def extract_text_recursive(obj):
+                        """Recursively find and extract all 'text' fields from nested dicts/lists"""
+                        texts = []
+                        if isinstance(obj, dict):
+                            # Check if this dict has a 'text' field
+                            if 'text' in obj and isinstance(obj['text'], str):
+                                texts.append(obj['text'])
+                            # Recursively search all values
+                            for value in obj.values():
+                                texts.extend(extract_text_recursive(value))
+                        elif isinstance(obj, list):
+                            # Recursively search all list items
+                            for item in obj:
+                                texts.extend(extract_text_recursive(item))
+                        return texts
+
+                    # Recursively extract all text fields from the event
+                    texts = extract_text_recursive(event)
+                    extracted_text.extend(texts)
                 except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
-                    # Skip lines that aren't valid JSON or don't have expected structure
+                    # Skip lines that aren't valid JSON
                     continue
 
             return {

@@ -138,6 +138,7 @@ def agent_task(*, item, **kwargs):
 
         print(f"Agent result type: {type(result)}")
         print(f"Agent result keys: {result.keys() if isinstance(result, dict) else 'N/A'}")
+        print(f"Full agent result: {result}")  # DEBUG: Print full result
 
         # Check for errors
         if isinstance(result, dict) and 'error' in result:
@@ -159,7 +160,10 @@ def agent_task(*, item, **kwargs):
             # If result is already a string (plain response), use it directly
             response = str(result)
 
-        print(f"Agent response: {str(response)[:100]}...")
+        # DEBUG: Print full response details
+        print(f"Agent response length: {len(str(response))}")
+        print(f"Agent response (first 200 chars): {str(response)[:200]}")
+        print(f"Agent response (full): {response}")
         return response
     except Exception as e:
         print(f"Error in agent_task: {str(e)}")

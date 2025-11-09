@@ -256,6 +256,14 @@ def invoke_agent(agent_arn, prompt, session_id=None):
             stream = response["response"]
             stream_data = stream.read().decode('utf-8', errors='replace')
 
+            # DEBUG: Print raw stream to understand format
+            print(f"\n{'='*80}")
+            print(f"[DEBUG STREAM] Length: {len(stream_data)} bytes")
+            print(f"[DEBUG STREAM] First 1000 chars:\n{stream_data[:1000]}")
+            if len(stream_data) > 1000:
+                print(f"[DEBUG STREAM] Last 500 chars:\n{stream_data[-500:]}")
+            print(f"{'='*80}\n")
+
             # Process line by line (Server-Sent Events format)
             for line in stream_data.split('\n'):
                 line = line.strip()
@@ -301,13 +309,20 @@ def invoke_agent(agent_arn, prompt, session_id=None):
 
                     # Recursively extract all text fields from the event
                     texts = extract_text_recursive(event)
+                    if texts:
+                        print(f"[DEBUG STREAM] Extracted {len(texts)} text field(s): {texts[:3]}...")  # Show first 3
                     extracted_text.extend(texts)
-                except (json.JSONDecodeError, KeyError, TypeError, AttributeError):
+                except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as e:
                     # Skip lines that aren't valid JSON
+                    print(f"[DEBUG STREAM] Skipped line (parse error): {str(e)[:100]}")
                     continue
 
+            final_response = ''.join(extracted_text)
+            print(f"[DEBUG STREAM] Final response length: {len(final_response)}")
+            print(f"[DEBUG STREAM] Final response preview: {final_response[:200]}")
+
             return {
-                'response': ''.join(extracted_text),
+                'response': final_response,
                 'session_id': session_id,
                 'content_type': content_type
             }

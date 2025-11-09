@@ -75,23 +75,23 @@ class MockDatasetItem:
         self.input = input
         self.expected_output = expected_output
 
-# Create a synthetic dataset with realistic, general-purpose questions
+# Create a synthetic dataset with realistic, general-purpose questions (in English)
 print(f"\n{'='*80}\nUsing a predefined set of general evaluation questions to ensure realistic testing.\n{'='*80}")
 items_list = [
     MockDatasetItem(
         id="eval-q1-list-all",
-        input={"question": "הצג את כל הזמנות הרכש"},
-        expected_output="הסוכן צריך להחזיר רשימה של הזמנות רכש. התשובה צריכה לכלול מספרי הזמנה, תאריכים וספקים."
+        input={"question": "Show me all purchase orders"},
+        expected_output="The agent should return a list of purchase orders. The response should include order numbers, dates, and suppliers."
     ),
     MockDatasetItem(
         id="eval-q2-are-there-any",
-        input={"question": "האם יש הזמנות רכש במערכת?"},
-        expected_output="הסוכן צריך לאשר אם קיימות הזמנות רכש ולהציג כמה מהן אם כן."
+        input={"question": "Are there any purchase orders in the system?"},
+        expected_output="The agent should confirm if purchase orders exist and show how many if so."
     ),
     MockDatasetItem(
         id="eval-q3-get-list",
-        input={"question": "תביא לי בבקשה את רשימת הזמנות הרכש"},
-        expected_output="הסוכן צריך להציג רשימה ברורה של הזמנות רכש מהמערכת."
+        input={"question": "Please bring me the list of purchase orders"},
+        expected_output="The agent should display a clear list of purchase orders from the system."
     )
 ]
 
@@ -223,7 +223,7 @@ print(f"{'='*80}\n")
 data = list(items_list)
 
 result = langfuse.run_experiment(
-    name="Hebrew Inventory Agent - Simple Evaluation",
+    name="SAP Inventory Agent - Simple Evaluation",
     data=data,
     task=agent_task,
     evaluators=[simple_quality_evaluator]

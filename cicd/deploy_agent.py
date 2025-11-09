@@ -45,14 +45,31 @@ def main():
     
     print("Loading agent hyperparameters...")
     config = load_hp_config()
-    
+
     # Extract the model and system prompt from the config
     if not config.get("model") or not config.get("system_prompt"):
         print("Error: Configuration must contain 'model' and 'system_prompt' objects.")
         sys.exit(1)
-    
+
     model = config["model"]
     system_prompt = config["system_prompt"]
+
+    # If system_prompt has a prompt_file reference, read the prompt from that file
+    if "prompt_file" in system_prompt:
+        prompt_file_path = system_prompt["prompt_file"]
+        try:
+            print(f"Reading system prompt from {prompt_file_path}...")
+            with open(prompt_file_path, 'r') as f:
+                prompt_content = f.read()
+            # Replace the prompt_file reference with the actual prompt content
+            system_prompt["prompt"] = prompt_content
+            del system_prompt["prompt_file"]
+        except FileNotFoundError:
+            print(f"Error: System prompt file {prompt_file_path} not found.")
+            sys.exit(1)
+        except Exception as e:
+            print(f"Error reading system prompt file {prompt_file_path}: {e}")
+            sys.exit(1)
 
     # Read configuration from terraform/gateway_output.json (local) or environment variables (CI/CD)
     gateway_url = os.getenv("GATEWAY_ENDPOINT_URL", "")

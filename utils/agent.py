@@ -286,32 +286,20 @@ def invoke_agent(agent_arn, prompt, session_id=None):
                 if not line.startswith('{'):
                     continue
 
-                # Try to parse as JSON event and extract text recursively
+                # Try to parse as JSON event and extract text from contentBlockDelta ONLY
                 try:
                     event = json.loads(line)
 
-                    # Helper function to recursively extract all 'text' fields
-                    def extract_text_recursive(obj):
-                        """Recursively find and extract all 'text' fields from nested dicts/lists"""
-                        texts = []
-                        if isinstance(obj, dict):
-                            # Check if this dict has a 'text' field
-                            if 'text' in obj and isinstance(obj['text'], str):
-                                texts.append(obj['text'])
-                            # Recursively search all values
-                            for value in obj.values():
-                                texts.extend(extract_text_recursive(value))
-                        elif isinstance(obj, list):
-                            # Recursively search all list items
-                            for item in obj:
-                                texts.extend(extract_text_recursive(item))
-                        return texts
-
-                    # Recursively extract all text fields from the event
-                    texts = extract_text_recursive(event)
-                    if texts:
-                        print(f"[DEBUG STREAM] Extracted {len(texts)} text field(s): {texts[:3]}...")  # Show first 3
-                    extracted_text.extend(texts)
+                    # Extract text ONLY from event.contentBlockDelta.delta.text path
+                    # This avoids duplicates from summary events and Python debug output
+                    if isinstance(event, dict) and 'event' in event:
+                        event_data = event['event']
+                        if isinstance(event_data, dict) and 'contentBlockDelta' in event_data:
+                            delta = event_data['contentBlockDelta'].get('delta', {})
+                            if isinstance(delta, dict) and 'text' in delta:
+                                text = delta['text']
+                                print(f"[DEBUG STREAM] Extracted text chunk: {text[:50]}...")
+                                extracted_text.append(text)
                 except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as e:
                     # Skip lines that aren't valid JSON
                     print(f"[DEBUG STREAM] Skipped line (parse error): {str(e)[:100]}")

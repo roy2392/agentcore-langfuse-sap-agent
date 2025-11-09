@@ -164,7 +164,7 @@ def deploy_agent(model, system_prompt, gateway_url, cognito_client_id, cognito_c
 
     # Agent configuration
     bedrock_model_id = model["model_id"]
-    system_prompt_value = system_prompt["prompt"]
+    # System prompt is now loaded from file in agent code (avoids 4KB env var limit)
 
     # AWS AgentCore Gateway pattern: Agent uses Gateway endpoint for tools
     # NO direct SAP credentials in agent environment!
@@ -177,7 +177,6 @@ def deploy_agent(model, system_prompt, gateway_url, cognito_client_id, cognito_c
             "OTEL_EXPORTER_OTLP_ENDPOINT": otel_endpoint,  # Use Langfuse OTEL endpoint
             "OTEL_EXPORTER_OTLP_HEADERS": otel_auth_header,  # Add Langfuse OTEL auth header
             "DISABLE_ADOT_OBSERVABILITY": "true",
-            "SYSTEM_PROMPT": system_prompt_value,
             "GATEWAY_ENDPOINT_URL": gateway_url,
             "COGNITO_CLIENT_ID": cognito_client_id,
             "COGNITO_CLIENT_SECRET": cognito_client_secret,

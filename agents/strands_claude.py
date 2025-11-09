@@ -73,8 +73,18 @@ def get_bedrock_model():
 # Initialize the Bedrock model
 bedrock_model = get_bedrock_model()
 
-# Define the agent's system prompt - Hebrew Inventory Management
-system_prompt = os.getenv("SYSTEM_PROMPT", "אתה סוכן מומחה בניהול מלאי. התשובות שלך צריכות להיות בעברית בלבד. השתמש ב-SAP OData API כדי לשלוף נתוני מלאי, מזמנות קנייה וכמויות של מוצרים. עבור כל שאלה על מלאי, ספק מידע מדויק וממוגן מה-SAP. ודא שהתשובה שלך כוללת: (1) פרטי מלאי נוכחי, (2) כמויות שהוזמנו, (3) תאריכים רלוונטיים, ו-(4) המלצות על סמך סטטוס המלאי.")
+# Load system prompt from file (avoids 4000-byte env var limit)
+def load_system_prompt():
+    """Load system prompt from bundled file"""
+    prompt_file = os.path.join(os.path.dirname(__file__), '..', 'cicd', 'system_prompt_english.txt')
+    try:
+        with open(prompt_file, 'r', encoding='utf-8') as f:
+            return f.read()
+    except FileNotFoundError:
+        # Fallback if file not found
+        return "אתה סוכן מומחה בניהול מלאי. התשובות שלך צריכות להיות בעברית בלבד."
+
+system_prompt = load_system_prompt()
 
 # Tools are provided by AgentCore Gateway, not embedded in agent code
 # The Gateway exposes SAP MCP Server tools to the agent

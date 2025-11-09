@@ -34,5 +34,6 @@ EXPOSE 8080
 # Copy entire project (respecting .dockerignore)
 COPY . .
 
-# Run the Flask web UI instead of the agent
-CMD ["python", "app.py"]
+# Use the full module path
+
+CMD ["python", "-m", "agents.strands_claude"]

@@ -102,6 +102,8 @@ async def strands_agent_bedrock(payload):
     trace_id = payload.get("trace_id")
     parent_obs_id = payload.get("parent_obs_id")
     print("User input:", user_input)
+    print(f"[DEBUG] Full payload keys: {list(payload.keys())}")
+    print(f"[DEBUG] Full payload: {payload}")
 
     # Initialize Strands telemetry and setup OTLP exporter
     strands_telemetry = StrandsTelemetry()

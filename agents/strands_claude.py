@@ -105,6 +105,14 @@ async def strands_agent_bedrock(payload):
     print(f"[DEBUG] Full payload keys: {list(payload.keys())}")
     print(f"[DEBUG] Full payload: {payload}")
 
+    # Try to get session ID from Flask request context
+    try:
+        from flask import request as flask_request
+        print(f"[DEBUG] Flask request headers: {dict(flask_request.headers)}")
+        print(f"[DEBUG] Flask request environ keys: {list(flask_request.environ.keys())}")
+    except Exception as e:
+        print(f"[DEBUG] Could not access Flask request: {e}")
+
     # Initialize Strands telemetry and setup OTLP exporter
     strands_telemetry = StrandsTelemetry()
     strands_telemetry.setup_otlp_exporter()

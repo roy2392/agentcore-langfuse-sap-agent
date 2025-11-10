@@ -155,13 +155,25 @@ async def strands_agent_bedrock(payload):
         print(f"[Agent] Warning: Could not fetch conversation history: {e}")
         # Continue without history rather than failing
 
-    # Create the agent with Gateway tools and conversation history
+    # Create the agent with Gateway tools
     agent = Agent(
         model=bedrock_model,
         system_prompt=system_prompt,
-        tools=tools_to_use,
-        history=conversation_history  # Pass conversation history to agent
+        tools=tools_to_use
     )
+
+    # Build input with conversation history context
+    if conversation_history:
+        # Construct a prompt that includes conversation history
+        history_context = "\n\nPrevious conversation:\n"
+        for msg in conversation_history[-10:]:  # Last 10 messages
+            role = msg['role'].capitalize()
+            content = msg['content']
+            history_context += f"{role}: {content}\n"
+        history_context += f"\nUser: {user_input}"
+        full_input = history_context
+    else:
+        full_input = user_input
 
     # Collect the full response for saving to memory
     full_response = []
@@ -169,11 +181,11 @@ async def strands_agent_bedrock(payload):
     # Use Langfuse telemetry if available
     if _langfuse_client:
         with _langfuse_client.start_as_current_observation(name='strands-agent', trace_context={"trace_id": trace_id, "parent_observation_id": parent_obs_id}):
-            async for chunk in agent.stream_async(user_input):
+            async for chunk in agent.stream_async(full_input):
                 full_response.append(str(chunk))
                 yield chunk
     else:
-        async for chunk in agent.stream_async(user_input):
+        async for chunk in agent.stream_async(full_input):
             full_response.append(str(chunk))
             yield chunk
 

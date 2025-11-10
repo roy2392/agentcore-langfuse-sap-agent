@@ -120,21 +120,106 @@ async def strands_agent_bedrock(payload):
     else:
         print("[Agent] WARNING: No Gateway connection - agent will run without tools")
 
-    # Create the agent with Gateway tools
+    # Get conversation history from BedrockAgentCore memory if available
+    conversation_history = []
+    try:
+        memory_id = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
+        session_id = payload.get("sessionId") or payload.get("runtimeSessionId")
+
+        if memory_id and session_id:
+            print(f"[Agent] Fetching conversation history from memory: {memory_id}, session: {session_id}")
+            import boto3
+            memory_client = boto3.client('bedrock-agentcore-data', region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"))
+
+            # Fetch recent conversation events from memory
+            response = memory_client.get_memory_events(
+                memoryId=memory_id,
+                memorySessionId=session_id,
+                maxItems=10  # Get last 10 conversation turns
+            )
+
+            # Convert memory events to conversation history format
+            for event in response.get('memoryEvents', []):
+                event_data = event.get('eventData', {})
+                if event_data.get('type') == 'conversationMessage':
+                    message = event_data.get('message', {})
+                    role = message.get('role')
+                    content = message.get('content')
+                    if role and content:
+                        conversation_history.append({"role": role, "content": content})
+
+            print(f"[Agent] Loaded {len(conversation_history)} messages from memory")
+        else:
+            print(f"[Agent] No memory or session ID available (memory_id={memory_id}, session_id={session_id})")
+    except Exception as e:
+        print(f"[Agent] Warning: Could not fetch conversation history: {e}")
+        # Continue without history rather than failing
+
+    # Create the agent with Gateway tools and conversation history
     agent = Agent(
         model=bedrock_model,
         system_prompt=system_prompt,
-        tools=tools_to_use
+        tools=tools_to_use,
+        history=conversation_history  # Pass conversation history to agent
     )
+
+    # Collect the full response for saving to memory
+    full_response = []
 
     # Use Langfuse telemetry if available
     if _langfuse_client:
         with _langfuse_client.start_as_current_observation(name='strands-agent', trace_context={"trace_id": trace_id, "parent_observation_id": parent_obs_id}):
             async for chunk in agent.stream_async(user_input):
+                full_response.append(str(chunk))
                 yield chunk
     else:
         async for chunk in agent.stream_async(user_input):
+            full_response.append(str(chunk))
             yield chunk
+
+    # Save conversation to memory after response completes
+    try:
+        memory_id = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
+        session_id = payload.get("sessionId") or payload.get("runtimeSessionId")
+
+        if memory_id and session_id:
+            import boto3
+            import time
+            memory_client = boto3.client('bedrock-agentcore-data', region_name=os.getenv("AWS_DEFAULT_REGION", "us-east-1"))
+
+            response_text = ''.join(full_response)
+
+            # Save user message to memory
+            memory_client.put_memory_event(
+                memoryId=memory_id,
+                memorySessionId=session_id,
+                eventData={
+                    'type': 'conversationMessage',
+                    'message': {
+                        'role': 'user',
+                        'content': user_input
+                    }
+                },
+                timestamp=int(time.time())
+            )
+
+            # Save assistant response to memory
+            memory_client.put_memory_event(
+                memoryId=memory_id,
+                memorySessionId=session_id,
+                eventData={
+                    'type': 'conversationMessage',
+                    'message': {
+                        'role': 'assistant',
+                        'content': response_text
+                    }
+                },
+                timestamp=int(time.time())
+            )
+
+            print(f"[Agent] Saved conversation to memory (user + assistant)")
+    except Exception as e:
+        print(f"[Agent] Warning: Could not save conversation to memory: {e}")
 
 if __name__ == "__main__":
     app.run()

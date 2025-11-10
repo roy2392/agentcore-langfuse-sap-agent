@@ -150,14 +150,16 @@ async def strands_agent_bedrock(payload):
 
             # Convert memory events to conversation history format
             for event in response.get('events', []):
-                event_data = json.loads(event.get('payload', '{}'))
-                # Look for conversationMessage type events
-                if event_data.get('type') == 'conversationMessage':
-                    message = event_data.get('message', {})
-                    role = message.get('role')
-                    content = message.get('content')
-                    if role and content:
-                        conversation_history.append({"role": role, "content": content})
+                payload = event.get('payload', [])
+                # Payload is a list of event data objects
+                for event_data in payload:
+                    # Look for conversationMessage type events
+                    if event_data.get('type') == 'conversationMessage':
+                        message = event_data.get('message', {})
+                        role = message.get('role')
+                        content = message.get('content')
+                        if role and content:
+                            conversation_history.append({"role": role, "content": content})
 
             print(f"[Agent] Loaded {len(conversation_history)} messages from memory")
         else:
@@ -216,13 +218,13 @@ async def strands_agent_bedrock(payload):
             memory_client.create_event(
                 memoryId=memory_id,
                 sessionId=session_id,
-                payload=json.dumps({
+                payload=[{
                     'type': 'conversationMessage',
                     'message': {
                         'role': 'user',
                         'content': user_input
                     }
-                }),
+                }],
                 eventTimestamp=int(time.time())
             )
 
@@ -230,13 +232,13 @@ async def strands_agent_bedrock(payload):
             memory_client.create_event(
                 memoryId=memory_id,
                 sessionId=session_id,
-                payload=json.dumps({
+                payload=[{
                     'type': 'conversationMessage',
                     'message': {
                         'role': 'assistant',
                         'content': response_text
                     }
-                }),
+                }],
                 eventTimestamp=int(time.time())
             )
 

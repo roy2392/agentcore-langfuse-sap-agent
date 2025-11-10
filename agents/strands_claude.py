@@ -134,7 +134,7 @@ async def strands_agent_bedrock(payload):
     conversation_history = []
     try:
         memory_id = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
-        session_id = payload.get("sessionId") or payload.get("runtimeSessionId")
+        session_id = payload.get("session_id")  # Now passed in payload from utils/agent.py
 
         if memory_id and session_id:
             print(f"[Agent] Fetching conversation history from memory: {memory_id}, session: {session_id}")
@@ -202,7 +202,7 @@ async def strands_agent_bedrock(payload):
     # Save conversation to memory after response completes
     try:
         memory_id = os.getenv("BEDROCK_AGENTCORE_MEMORY_ID")
-        session_id = payload.get("sessionId") or payload.get("runtimeSessionId")
+        session_id = payload.get("session_id")  # Now passed in payload from utils/agent.py
 
         if memory_id and session_id:
             import boto3

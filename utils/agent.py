@@ -225,19 +225,18 @@ def invoke_agent(agent_arn, prompt, session_id=None):
             except Exception as e:
                 print(f"Note: Langfuse context not available: {str(e)}")
 
-        # Prepare the payload
-        payload = json.dumps({"prompt": prompt, 
-        "trace_id": trace_id, 
-        "parent_obs_id": obs_id
-        }).encode()
-        
-        # Generate session_id if not provided
+        # Generate session_id first if not provided
         if session_id is None:
             session_id = str(uuid.uuid4())
+
+        # Prepare the payload - include session_id so agent can access it
+        payload = json.dumps({
+            "prompt": prompt,
+            "trace_id": trace_id,
+            "parent_obs_id": obs_id,
+            "session_id": session_id  # Add session_id to payload
+        }).encode()
         
-
-
-
         # Invoke the agent
         response = agent_core_client.invoke_agent_runtime(
             agentRuntimeArn=agent_arn,

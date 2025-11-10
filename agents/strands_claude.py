@@ -144,6 +144,7 @@ async def strands_agent_bedrock(payload):
             # Retrieve recent conversation records from memory
             response = memory_client.list_events(
                 memoryId=memory_id,
+                actorId=session_id,  # Use session_id as actorId for user-specific memory
                 sessionId=session_id,
                 maxResults=20  # Get last 20 events
             )
@@ -151,15 +152,15 @@ async def strands_agent_bedrock(payload):
             # Convert memory events to conversation history format
             for event in response.get('events', []):
                 payload = event.get('payload', [])
-                # Payload is a list of event data objects
-                for event_data in payload:
-                    # Look for conversationMessage type events
-                    if event_data.get('type') == 'conversationMessage':
-                        message = event_data.get('message', {})
-                        role = message.get('role')
-                        content = message.get('content')
-                        if role and content:
-                            conversation_history.append({"role": role, "content": content})
+                # Payload is a list of conversational events
+                for item in payload:
+                    conversational = item.get('conversational', {})
+                    if conversational:
+                        role = conversational.get('role', '').lower()  # Convert USER/ASSISTANT to lowercase
+                        content_obj = conversational.get('content', {})
+                        content_text = content_obj.get('text', '')
+                        if role and content_text:
+                            conversation_history.append({"role": role, "content": content_text})
 
             print(f"[Agent] Loaded {len(conversation_history)} messages from memory")
         else:
@@ -217,12 +218,14 @@ async def strands_agent_bedrock(payload):
             # Save user message to memory
             memory_client.create_event(
                 memoryId=memory_id,
+                actorId=session_id,  # Use session_id as actorId for user-specific memory
                 sessionId=session_id,
                 payload=[{
-                    'type': 'conversationMessage',
-                    'message': {
-                        'role': 'user',
-                        'content': user_input
+                    'conversational': {
+                        'role': 'USER',
+                        'content': {
+                            'text': user_input
+                        }
                     }
                 }],
                 eventTimestamp=int(time.time())
@@ -231,12 +234,14 @@ async def strands_agent_bedrock(payload):
             # Save assistant response to memory
             memory_client.create_event(
                 memoryId=memory_id,
+                actorId=session_id,  # Use session_id as actorId for user-specific memory
                 sessionId=session_id,
                 payload=[{
-                    'type': 'conversationMessage',
-                    'message': {
-                        'role': 'assistant',
-                        'content': response_text
+                    'conversational': {
+                        'role': 'ASSISTANT',
+                        'content': {
+                            'text': response_text
+                        }
                     }
                 }],
                 eventTimestamp=int(time.time())

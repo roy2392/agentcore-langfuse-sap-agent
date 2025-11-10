@@ -144,13 +144,13 @@ async def strands_agent_bedrock(payload):
             # Retrieve recent conversation records from memory
             response = memory_client.list_events(
                 memoryId=memory_id,
-                memorySessionId=session_id,
+                sessionId=session_id,
                 maxResults=20  # Get last 20 events
             )
 
             # Convert memory events to conversation history format
             for event in response.get('events', []):
-                event_data = json.loads(event.get('eventData', '{}'))
+                event_data = json.loads(event.get('payload', '{}'))
                 # Look for conversationMessage type events
                 if event_data.get('type') == 'conversationMessage':
                     message = event_data.get('message', {})
@@ -215,29 +215,29 @@ async def strands_agent_bedrock(payload):
             # Save user message to memory
             memory_client.create_event(
                 memoryId=memory_id,
-                memorySessionId=session_id,
-                eventData=json.dumps({
+                sessionId=session_id,
+                payload=json.dumps({
                     'type': 'conversationMessage',
                     'message': {
                         'role': 'user',
                         'content': user_input
                     }
                 }),
-                timestamp=int(time.time())
+                eventTimestamp=int(time.time())
             )
 
             # Save assistant response to memory
             memory_client.create_event(
                 memoryId=memory_id,
-                memorySessionId=session_id,
-                eventData=json.dumps({
+                sessionId=session_id,
+                payload=json.dumps({
                     'type': 'conversationMessage',
                     'message': {
                         'role': 'assistant',
                         'content': response_text
                     }
                 }),
-                timestamp=int(time.time())
+                eventTimestamp=int(time.time())
             )
 
             print(f"[Agent] Saved conversation to memory (user + assistant)")
